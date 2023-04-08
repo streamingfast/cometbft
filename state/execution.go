@@ -206,6 +206,14 @@ func (blockExec *BlockExecutor) ApplyBlock(
 	fail.Fail() // XXX
 
 	// Save the results before we commit.
+
+	for idx := range abciResponses.DeliverTxs {
+		abciResponses.DeliverTxs[idx].Log = ""
+		abciResponses.DeliverTxs[idx].Events = []abci.Event{}
+	}
+	abciResponses.EndBlock.Events = []abci.Event{}
+	abciResponses.BeginBlock.Events = []abci.Event{}
+
 	if err := blockExec.store.SaveABCIResponses(block.Height, abciResponses); err != nil {
 		return state, 0, err
 	}
