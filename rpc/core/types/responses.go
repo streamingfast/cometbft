@@ -58,6 +58,7 @@ type ResultBlockResults struct {
 	ValidatorUpdates      []abci.ValidatorUpdate    `json:"validator_updates"`
 	ConsensusParamUpdates *cmtproto.ConsensusParams `json:"consensus_param_updates"`
 	AppHash               []byte                    `json:"app_hash"`
+	EventPlaintext        bool                      `json:"event_plaintext"`
 }
 
 // NewResultCommit is a helper to initialize the ResultCommit with
