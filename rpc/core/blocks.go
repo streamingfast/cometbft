@@ -190,6 +190,7 @@ func BlockResults(ctx *rpctypes.Context, heightPtr *int64) (*ctypes.ResultBlockR
 		EndBlockEvents:        results.EndBlock.Events,
 		ValidatorUpdates:      results.EndBlock.ValidatorUpdates,
 		ConsensusParamUpdates: results.EndBlock.ConsensusParamUpdates,
+		EventPlaintext:        true,
 	}, nil
 }
 
