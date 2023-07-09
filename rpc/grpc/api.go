@@ -3,8 +3,10 @@ package coregrpc
 import (
 	"context"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	abci "github.com/cometbft/cometbft/abci/types"
-	core "github.com/cometbft/cometbft/rpc/core"
+	"github.com/cometbft/cometbft/rpc/core"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 )
 
@@ -17,6 +19,9 @@ func (bapi *broadcastAPI) Ping(ctx context.Context, req *RequestPing) (*Response
 }
 
 func (bapi *broadcastAPI) BroadcastTx(ctx context.Context, req *RequestBroadcastTx) (*ResponseBroadcastTx, error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "BroadcastTx")
+	defer span.Finish()
+
 	// NOTE: there's no way to get client's remote address
 	// see https://stackoverflow.com/questions/33684570/session-and-remote-ip-address-in-grpc-go
 	res, err := core.BroadcastTxCommit(&rpctypes.Context{}, req.Tx)

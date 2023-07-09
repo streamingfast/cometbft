@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	cmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
 	"github.com/cometbft/cometbft/cmd/cometbft/commands/debug"
 	cfg "github.com/cometbft/cometbft/config"
@@ -12,6 +14,9 @@ import (
 )
 
 func main() {
+	tracer.Start(tracer.WithServiceName("cometbft"))
+	defer tracer.Stop()
+
 	rootCmd := cmd.RootCmd
 	rootCmd.AddCommand(
 		cmd.GenValidatorCmd,
