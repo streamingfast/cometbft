@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	tracer.Start(tracer.WithService("cometbft"))
+	tracer.Start(tracer.WithService("cometbft"), tracer.WithAgentAddr("host.docker.internal:8126"))
 	defer tracer.Stop()
 
 	rootCmd := cmd.RootCmd
