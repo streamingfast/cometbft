@@ -3,10 +3,6 @@ package http
 import (
 	"context"
 	"errors"
-	"net/http"
-	"strings"
-	"time"
-
 	"github.com/cometbft/cometbft/libs/bytes"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
 	"github.com/cometbft/cometbft/libs/log"
@@ -17,6 +13,10 @@ import (
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 	"github.com/cometbft/cometbft/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"net/http"
+	"strings"
+	"time"
 )
 
 /*
@@ -204,6 +204,8 @@ func (b *BatchHTTP) Count() int {
 // baseRPCClient
 
 func (c *baseRPCClient) Status(ctx context.Context) (*ctypes.ResultStatus, error) {
+	span := tracer.StartSpan("Status")
+	defer span.Finish()
 	result := new(ctypes.ResultStatus)
 	_, err := c.caller.Call(ctx, "status", map[string]interface{}{}, result)
 	if err != nil {
