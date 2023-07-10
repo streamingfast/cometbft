@@ -11,6 +11,7 @@ import (
 	"time"
 
 	dbm "github.com/cometbft/cometbft-db"
+	"github.com/felixge/fgprof"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
@@ -893,6 +894,7 @@ func NewNode(config *cfg.Config,
 	if config.RPC.PprofListenAddress != "" {
 		go func() {
 			logger.Info("Starting pprof server", "laddr", config.RPC.PprofListenAddress)
+			http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
 			//nolint:gosec,nolintlint // G114: Use of net/http serve function that has no support for setting timeouts
 			logger.Error("pprof server error", "err", http.ListenAndServe(config.RPC.PprofListenAddress, nil))
 		}()
