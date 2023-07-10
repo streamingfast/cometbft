@@ -19,7 +19,7 @@ func (bapi *broadcastAPI) Ping(ctx context.Context, req *RequestPing) (*Response
 }
 
 func (bapi *broadcastAPI) BroadcastTx(ctx context.Context, req *RequestBroadcastTx) (*ResponseBroadcastTx, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "BroadcastTx")
+	span := tracer.StartSpan("BroadcastTx")
 	defer span.Finish()
 
 	// NOTE: there's no way to get client's remote address
