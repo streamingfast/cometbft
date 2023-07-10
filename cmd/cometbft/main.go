@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	tracer.Start(tracer.WithServiceName("cometbft"))
+	tracer.Start(tracer.WithService("cometbft"))
 	defer tracer.Stop()
 
 	rootCmd := cmd.RootCmd
