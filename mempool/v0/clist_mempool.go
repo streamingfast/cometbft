@@ -3,8 +3,10 @@ package v0
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/config"
@@ -206,7 +208,10 @@ func (mem *CListMempool) CheckTx(
 	txInfo mempool.TxInfo,
 ) error {
 
+	start := time.Now()
+	fmt.Printf("%v - s: %v, ", txInfo.SenderID, start)
 	mem.updateMtx.RLock()
+	fmt.Printf("f: %v\n", time.Since(start))
 	// use defer to unlock mutex because application (*local client*) might panic
 	defer mem.updateMtx.RUnlock()
 
