@@ -209,9 +209,10 @@ func (mem *CListMempool) CheckTx(
 ) error {
 
 	start := time.Now()
-	fmt.Printf("%v - s: %v, ", txInfo.SenderID, start)
 	mem.updateMtx.RLock()
-	fmt.Printf("f: %v\n", time.Since(start))
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		fmt.Printf("slow lock!!! time: %v, txn: %s\n", elapsed, tx)
+	}
 	// use defer to unlock mutex because application (*local client*) might panic
 	defer mem.updateMtx.RUnlock()
 
