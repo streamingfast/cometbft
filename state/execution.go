@@ -1,8 +1,10 @@
 package state
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"runtime/trace"
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -274,19 +276,28 @@ func (blockExec *BlockExecutor) Commit(
 	block *types.Block,
 	deliverTxResponses []*abci.ResponseDeliverTx,
 ) ([]byte, int64, error) {
+	ctx, task := trace.NewTask(context.Background(), "block commit")
+	defer task.End()
+
+	r := trace.StartRegion(ctx, "mempool lock")
 	blockExec.mempool.Lock()
+	r.End()
 	defer blockExec.mempool.Unlock()
 
 	// while mempool is Locked, flush to ensure all async requests have completed
 	// in the ABCI app before Commit.
+	r = trace.StartRegion(ctx, "flush mempool conn")
 	err := blockExec.mempool.FlushAppConn()
+	r.End()
 	if err != nil {
 		blockExec.logger.Error("client error during mempool.FlushAppConn", "err", err)
 		return nil, 0, err
 	}
 
 	// Commit block, get hash back
+	r = trace.StartRegion(ctx, "commit sync")
 	res, err := blockExec.proxyApp.CommitSync()
+	r.End()
 	if err != nil {
 		blockExec.logger.Error("client error during proxyAppConn.CommitSync", "err", err)
 		return nil, 0, err
@@ -301,6 +312,7 @@ func (blockExec *BlockExecutor) Commit(
 	)
 
 	// Update mempool.
+	r = trace.StartRegion(ctx, "update mempool")
 	err = blockExec.mempool.Update(
 		block.Height,
 		block.Txs,
@@ -308,6 +320,7 @@ func (blockExec *BlockExecutor) Commit(
 		TxPreCheck(state),
 		TxPostCheck(state),
 	)
+	r.End()
 
 	return res.Data, res.RetainHeight, err
 }
