@@ -101,6 +101,7 @@ func TestBlockResults(t *testing.T) {
 			FinalizeBlockEvents:   results.Events,
 			ValidatorUpdates:      results.ValidatorUpdates,
 			ConsensusParamUpdates: results.ConsensusParamUpdates,
+			EventPlaintext:        true,
 		}},
 	}
 
