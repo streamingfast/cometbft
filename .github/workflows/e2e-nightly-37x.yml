@@ -4,9 +4,9 @@
 # modulo changes to the version labels.
 
 name: e2e-nightly-37x
-on:
-  schedule:
-    - cron: '0 2 * * *'
+# on:
+#   schedule:
+#     - cron: '0 2 * * *'
 
 jobs:
   e2e-nightly-test:
