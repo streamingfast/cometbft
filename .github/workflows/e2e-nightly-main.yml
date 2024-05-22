@@ -5,7 +5,8 @@
 # markers.
 
 name: e2e-nightly-main
-# on:
+on:
+  workflow_dispatch:  # allow running workflow manually
 #   schedule:
 #     - cron: '0 2 * * *'
 

@@ -4,7 +4,8 @@
 # modulo changes to the version labels.
 
 name: e2e-nightly-34x
-# on:
+on:
+  workflow_dispatch:  # allow running workflow manually
 #   schedule:
 #     - cron: '0 2 * * *'
 
