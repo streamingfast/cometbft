@@ -88,6 +88,7 @@ func (t *timeoutTicker) stopTimer() {
 	if !t.timer.Stop() {
 		<-t.timer.C
 	}
+	t.timerActive = false
 }
 
 // send on tickChan to start a new timer.
@@ -127,6 +128,7 @@ func (t *timeoutTicker) timeoutRoutine() {
 
 			t.Logger.Debug("Scheduled timeout", "dur", ti.Duration, "height", ti.Height, "round", ti.Round, "step", ti.Step)
 		case <-t.timer.C:
+			t.timerActive = false
 			t.Logger.Info("Timed out", "dur", ti.Duration, "height", ti.Height, "round", ti.Round, "step", ti.Step)
 			// go routine here guarantees timeoutRoutine doesn't block.
 			// Determinism comes from playback in the receiveRoutine.
