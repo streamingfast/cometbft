@@ -40,10 +40,10 @@ type timeoutTicker struct {
 // NewTimeoutTicker returns a new TimeoutTicker.
 func NewTimeoutTicker() TimeoutTicker {
 	tt := &timeoutTicker{
+		timer: time.NewTimer(0),
 		// An indicator variable to check if the timer is active or not.
 		// Concurrency safe because the timer is only accessed by a single goroutine.
 		timerActive: true,
-		timer:       time.NewTimer(0),
 		tickChan:    make(chan timeoutInfo, tickTockBufferSize),
 		tockChan:    make(chan timeoutInfo, tickTockBufferSize),
 	}
@@ -92,8 +92,8 @@ func (t *timeoutTicker) stopTimer() {
 }
 
 // send on tickChan to start a new timer.
-// timers are interupted and replaced by new ticks from later steps
-// timeouts of 0 on the tickChan will be immediately relayed to the tockChan
+// timers are interrupted and replaced by new ticks from later steps
+// timeouts of 0 on the tickChan will be immediately relayed to the tockChan.
 // NOTE: timerActive is not concurrency safe, but it's only accessed in NewTimer and timeoutRoutine,
 // making it single-threaded access.
 func (t *timeoutTicker) timeoutRoutine() {
