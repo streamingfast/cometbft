@@ -1,4 +1,3 @@
-package core
 
 import (
 	"fmt"
@@ -74,6 +73,7 @@ func TestBlockResults(t *testing.T) {
 			{Code: 0, Data: []byte{0x02}, Log: "ok"},
 			{Code: 1, Log: "not ok"},
 		},
+		AppHash: make([]byte, 1),
 	}
 
 	env := &Environment{}
@@ -102,6 +102,7 @@ func TestBlockResults(t *testing.T) {
 			ValidatorUpdates:      results.ValidatorUpdates,
 			ConsensusParamUpdates: results.ConsensusParamUpdates,
 			EventPlaintext:        true,
+			AppHash:               make([]byte, 1),
 		}},
 	}
 
