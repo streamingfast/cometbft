@@ -169,7 +169,7 @@ func BenchmarkIterator(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		iter := mp.NewIterator(context.TODO())
+		iter := NewBlockingIterator(context.TODO(), mp, "bench")
 		b.StartTimer()
 
 		// Iterate until all txs in the mempool are accessed.
@@ -203,7 +203,7 @@ func BenchmarkConcurrentkIterators(b *testing.B) {
 		// Create concurrent iterators.
 		iters := make([]Iterator, numIterators)
 		for j := 0; j < numIterators; j++ {
-			iters[j] = mp.NewIterator(context.TODO())
+			iters[j] = NewBlockingIterator(context.TODO(), mp, "bench")
 		}
 		wg := sync.WaitGroup{}
 		wg.Add(numIterators)

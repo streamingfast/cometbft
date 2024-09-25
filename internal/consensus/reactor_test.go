@@ -165,6 +165,7 @@ func TestReactorWithEvidence(t *testing.T) {
 		// Make Mempool
 		mempool := mempl.NewCListMempool(config.Mempool,
 			proxyAppConnMem,
+			nil,
 			state.LastBlockHeight,
 			mempl.WithMetrics(memplMetrics),
 			mempl.WithPreCheck(sm.TxPreCheck(state)),
@@ -446,6 +447,7 @@ func TestReactorRecordsVotesAndBlockParts(t *testing.T) {
 func TestReactorVotingPowerChange(t *testing.T) {
 	nVals := 4
 	logger := log.TestingLogger()
+
 	css, cleanup := randConsensusNet(
 		t,
 		nVals,
