@@ -230,14 +230,17 @@ func (blockExec *BlockExecutor) ApplyBlock(
 func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, block *types.Block) (State, error) {
 	startTime := time.Now().UnixNano()
 	abciResponse, err := blockExec.proxyApp.FinalizeBlock(context.TODO(), &abci.RequestFinalizeBlock{
-		Hash:               block.Hash(),
-		NextValidatorsHash: block.NextValidatorsHash,
-		ProposerAddress:    block.ProposerAddress,
-		Height:             block.Height,
-		Time:               block.Time,
-		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
-		Misbehavior:        block.Evidence.Evidence.ToABCI(),
-		Txs:                block.Txs.ToSliceOfBytes(),
+		Hash:                  block.Hash(),
+		NextValidatorsHash:    block.NextValidatorsHash,
+		ProposerAddress:       block.ProposerAddress,
+		Height:                block.Height,
+		Time:                  block.Time,
+		DecidedLastCommit:     buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
+		Misbehavior:           block.Evidence.Evidence.ToABCI(),
+		Txs:                   block.Txs.ToSliceOfBytes(),
+		LastBlockHash:         block.LastBlockID.Hash,
+		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
+		LastBlockPartSetHash:  block.LastBlockID.Hash,
 	})
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
@@ -772,14 +775,17 @@ func ExecCommitBlock(
 	commitInfo := buildLastCommitInfoFromStore(block, store, initialHeight)
 
 	resp, err := appConnConsensus.FinalizeBlock(context.TODO(), &abci.RequestFinalizeBlock{
-		Hash:               block.Hash(),
-		NextValidatorsHash: block.NextValidatorsHash,
-		ProposerAddress:    block.ProposerAddress,
-		Height:             block.Height,
-		Time:               block.Time,
-		DecidedLastCommit:  commitInfo,
-		Misbehavior:        block.Evidence.Evidence.ToABCI(),
-		Txs:                block.Txs.ToSliceOfBytes(),
+		Hash:                  block.Hash(),
+		NextValidatorsHash:    block.NextValidatorsHash,
+		ProposerAddress:       block.ProposerAddress,
+		Height:                block.Height,
+		Time:                  block.Time,
+		DecidedLastCommit:     commitInfo,
+		Misbehavior:           block.Evidence.Evidence.ToABCI(),
+		Txs:                   block.Txs.ToSliceOfBytes(),
+		LastBlockHash:         block.LastBlockID.Hash,
+		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
+		LastBlockPartSetHash:  block.LastBlockID.Hash,
 	})
 	if err != nil {
 		logger.Error("error in proxyAppConn.FinalizeBlock", "err", err)
