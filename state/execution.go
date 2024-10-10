@@ -241,6 +241,13 @@ func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, b
 		LastBlockHash:         block.LastBlockID.Hash,
 		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
 		LastBlockPartSetHash:  block.LastBlockID.Hash,
+		AppHash:               block.AppHash,
+		ValidatorsHash:        block.ValidatorsHash,
+		ConsensusHash:         block.ConsensusHash,
+		DataHash:              block.DataHash,
+		EvidenceHash:          block.EvidenceHash,
+		LastCommitHash:        block.LastCommitHash,
+		LastResultsHash:       block.LastResultsHash,
 	})
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
@@ -786,6 +793,13 @@ func ExecCommitBlock(
 		LastBlockHash:         block.LastBlockID.Hash,
 		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
 		LastBlockPartSetHash:  block.LastBlockID.Hash,
+		AppHash:               block.AppHash,
+		ValidatorsHash:        block.ValidatorsHash,
+		ConsensusHash:         block.ConsensusHash,
+		DataHash:              block.DataHash,
+		EvidenceHash:          block.EvidenceHash,
+		LastCommitHash:        block.LastCommitHash,
+		LastResultsHash:       block.LastResultsHash,
 	})
 	if err != nil {
 		logger.Error("error in proxyAppConn.FinalizeBlock", "err", err)
