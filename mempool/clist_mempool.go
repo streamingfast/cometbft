@@ -20,7 +20,10 @@ import (
 	"github.com/cometbft/cometbft/types"
 )
 
-const defaultLane = "default"
+const (
+	noSender    = p2p.ID("")
+	defaultLane = "default"
+)
 
 // CListMempool is an ordered in-memory pool for transactions before they are
 // proposed in a consensus round. Transaction validity is checked using the
@@ -150,6 +153,18 @@ func NewCListMempool(
 	}
 
 	return mp
+}
+
+func (mem *CListMempool) GetSenders(txKey types.TxKey) ([]p2p.ID, error) {
+	mem.txsMtx.RLock()
+	defer mem.txsMtx.RUnlock()
+
+	elem, ok := mem.txsMap[txKey]
+	if !ok {
+		return nil, ErrTxNotFound
+	}
+	memTx := elem.Value.(*mempoolTx)
+	return memTx.Senders(), nil
 }
 
 func (mem *CListMempool) addToCache(tx types.Tx) bool {
