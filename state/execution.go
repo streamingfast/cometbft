@@ -227,15 +227,25 @@ func (blockExec *BlockExecutor) ApplyBlock(
 func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, block *types.Block, syncingToHeight int64) (State, error) {
 	startTime := cmttime.Now().UnixNano()
 	abciResponse, err := blockExec.proxyApp.FinalizeBlock(context.TODO(), &abci.FinalizeBlockRequest{
-		Hash:               block.Hash(),
-		NextValidatorsHash: block.NextValidatorsHash,
-		ProposerAddress:    block.ProposerAddress,
-		Height:             block.Height,
-		Time:               block.Time,
-		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
-		Misbehavior:        block.Evidence.Evidence.ToABCI(),
-		Txs:                block.Txs.ToSliceOfBytes(),
-		SyncingToHeight:    syncingToHeight,
+		Hash:                  block.Hash(),
+		NextValidatorsHash:    block.NextValidatorsHash,
+		ProposerAddress:       block.ProposerAddress,
+		Height:                block.Height,
+		Time:                  block.Time,
+		DecidedLastCommit:     buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
+		Misbehavior:           block.Evidence.Evidence.ToABCI(),
+		Txs:                   block.Txs.ToSliceOfBytes(),
+		SyncingToHeight:       syncingToHeight,
+		LastBlockHash:         block.LastBlockID.Hash,
+		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
+		LastBlockPartSetHash:  block.LastBlockID.Hash,
+		AppHash:               block.AppHash,
+		ValidatorsHash:        block.ValidatorsHash,
+		ConsensusHash:         block.ConsensusHash,
+		DataHash:              block.DataHash,
+		EvidenceHash:          block.EvidenceHash,
+		LastCommitHash:        block.LastCommitHash,
+		LastResultsHash:       block.LastResultsHash,
 	})
 	endTime := cmttime.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)

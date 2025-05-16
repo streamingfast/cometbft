@@ -1,7 +1,8 @@
 module github.com/cometbft/cometbft
 
-go 1.23
-toolchain go1.23.7
+go 1.23.1
+
+toolchain go1.24.2
 
 require (
 	github.com/BurntSushi/toml v1.4.0
@@ -53,7 +54,7 @@ require (
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
 	golang.org/x/sync v0.12.0
 	gonum.org/v1/gonum v0.15.1
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 )
 
 require (

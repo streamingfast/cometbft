@@ -207,6 +207,18 @@ message FinalizeBlockRequest {
   bytes proposer_address = 8;
   // If the node is syncing/replaying blocks - target height. If not, syncing_to == height.
   int64 syncing_to_height = 9;
+  
+  // SF Added fields for sf block
+  bytes last_block_hash = 10;
+  int64 last_block_part_set_total = 11;
+  bytes last_block_part_set_hash = 12;
+  bytes app_hash = 13;
+  bytes validators_hash = 14;
+  bytes consensus_hash = 15;
+  bytes data_hash = 16;
+  bytes evidence_hash = 17;
+  bytes last_commit_hash = 18;
+  bytes last_results_hash = 19;
 }
 
 // ----------------------------------------
