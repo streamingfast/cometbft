@@ -407,7 +407,7 @@ func (mem *CListMempool) handleCheckTxResponse(tx types.Tx, sender p2p.ID) func(
 		}
 
 		var postCheckErr error
-		if mem.postCheck != nil {
+		if mem.postCheck != nil && res.Code == abci.CodeTypeOK {
 			postCheckErr = mem.postCheck(tx, res)
 		}
 
