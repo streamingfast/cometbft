@@ -371,7 +371,7 @@ func (mem *CListMempool) CheckTx(tx types.Tx, sender p2p.ID) (*abcicli.ReqRes, e
 		// (eg. after committing a block, txs are removed from mempool but not cache),
 		// so we only record the sender for txs still in the mempool.
 		if err := mem.addSender(tx.Key(), sender); err != nil {
-			mem.logger.Error("Could not add sender to tx", "tx", tx.Hash(), "sender", sender, "err", err)
+			mem.logger.Info("Could not add sender to tx", "tx", tx.Hash(), "sender", sender, "err", err)
 		}
 		// TODO: consider punishing peer for dups,
 		// its non-trivial since invalid txs can become valid,
@@ -452,7 +452,7 @@ func (mem *CListMempool) handleCheckTxResponse(tx types.Tx, sender p2p.ID) func(
 			mem.metrics.RejectedTxs.Add(1)
 			// Update senders on existing entry.
 			if err := mem.addSender(txKey, sender); err != nil {
-				mem.logger.Error("Could not add sender to tx", "tx", tx.Hash(), "sender", sender, "err", err)
+				mem.logger.Info("Could not add sender to tx", "tx", tx.Hash(), "sender", sender, "err", err)
 			}
 			mem.logger.Debug(
 				"transaction already in mempool, not adding it again",

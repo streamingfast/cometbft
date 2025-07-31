@@ -956,7 +956,7 @@ func (cs *State) handleMsg(mi msgInfo) {
 	}
 
 	if err != nil {
-		cs.Logger.Error(
+		cs.Logger.Info(
 			"Failed to process message",
 			"height", cs.Height,
 			"round", cs.Round,
