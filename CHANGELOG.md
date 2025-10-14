@@ -58,7 +58,7 @@ team, including:
    details.
 5. The first officially supported release of the [data companion
    API](./docs/architecture/adr-101-data-companion-pull-api.md).
-6. Versioning of both the Protobuf definitions _and_ RPC. By versioning our
+6. Versioning of both the Protobuf definitions *and* RPC. By versioning our
    APIs, we aim to provide a level of commitment to API stability while
    simultaneously affording ourselves the ability to roll out substantial
    changes in non-breaking releases of CometBFT. See [ADR
@@ -88,7 +88,7 @@ the stability guarantees we provide for pre-releases.
 
 ### BREAKING CHANGES
 
- - `[abci/types]` Rename `UpdateValidator` to `NewValidatorUpdate`, remove
+- `[abci/types]` Rename `UpdateValidator` to `NewValidatorUpdate`, remove
    `Ed25519ValidatorUpdate` ([\#2843](https://github.com/cometbft/cometbft/pull/2843))
 - [`config`] deprecate boltdb and cleveldb. If you're using either of those,
   please reach out ([\#2775](https://github.com/cometbft/cometbft/pull/2775))
@@ -114,12 +114,12 @@ method is removed ([\#4040](https://github.com/cometbft/cometbft/pull/4040)).
   instances to follow the naming changes in the proto-derived
   `api/cometbft/abci/v1` package
   ([\#1533](https://github.com/cometbft/cometbft/pull/1533)):
-  * The prefixed naming pattern `RequestFoo`, `ReponseFoo` changed to
+    - The prefixed naming pattern `RequestFoo`, `ReponseFoo` changed to
     suffixed `FooRequest`, `FooResponse`.
-  * Each method gets its own unique request and response type to allow for
+    - Each method gets its own unique request and response type to allow for
     independent evolution with backward compatibility.
-  * `ABCIClient` renamed to `ABCIServiceClient`.
-  * `ABCIServer` renamed to `ABCIServiceServer`.
+    - `ABCIClient` renamed to `ABCIServiceClient`.
+    - `ABCIServer` renamed to `ABCIServiceServer`.
 - `[blocksync]` Move to `internal`
   ([\#1485](https://github.com/cometbft/cometbft/pull/1485))
 - `[cmd]` Remove `replay` and `replay-console` subcommands
@@ -232,14 +232,14 @@ method is removed ([\#4040](https://github.com/cometbft/cometbft/pull/4040)).
   data companion gRPC API as per
   [RFC 106](https://github.com/cometbft/cometbft/blob/main/docs/references/rfc/rfc-106-separate-stateful-methods.md)
   ([\#2230](https://github.com/cometbft/cometbft/issues/2230)):
-  * `GetLatest` from `cometbft.services.block.v1.BlockService`;
-  * `GetLatestBlockResults` from `cometbft.services.block_results.v1.BlockResultsService`.
+    - `GetLatest` from `cometbft.services.block.v1.BlockService`;
+    - `GetLatestBlockResults` from `cometbft.services.block_results.v1.BlockResultsService`.
 - `[rpc/grpc]` Remove support for stateful block data retrieval methods from the
   data companion APIs as per [RFC 106](https://github.com/cometbft/cometbft/blob/main/docs/references/rfc/rfc-106-separate-stateful-methods.md)
-  * `GetLatestBlock` method removed from the `BlockServiceClient` interface.
-  * `GetLatestBlockResults` method removed from the `BlockResultServiceClient` interface.
-  * `GetLatest` endpoint is no longer served by `BlockServiceServer` instances.
-  * `GetLatestBlockResults` endpoint is no longer served by `BlockResultServiceServer` instances.
+    - `GetLatestBlock` method removed from the `BlockServiceClient` interface.
+    - `GetLatestBlockResults` method removed from the `BlockResultServiceClient` interface.
+    - `GetLatest` endpoint is no longer served by `BlockServiceServer` instances.
+    - `GetLatestBlockResults` endpoint is no longer served by `BlockResultServiceServer` instances.
 - `[proto]` Renamed the packages from `tendermint.*` to `cometbft.*`
   and introduced versioned packages to distinguish between proto definitions
   released in `0.34.x`, `0.37.x`, `0.38.x`, and `1.x` versions.
@@ -256,26 +256,26 @@ method is removed ([\#4040](https://github.com/cometbft/cometbft/pull/4040)).
   ([#736](https://github.com/cometbft/cometbft/issues/736),
    [#1504](https://github.com/cometbft/cometbft/issues/1504),
    [#1530](https://github.com/cometbft/cometbft/issues/1530)):
-  * Names of request and response types used in gRPC changed by making
+    - Names of request and response types used in gRPC changed by making
     `Request`/`Response` the suffix instead of the prefix, e.g.
     `RequestCheckTx` ⭢ `CheckTxRequest`.
-  * The `Request` and `Response` multiplex messages are redefined accordingly.
-  * `CheckTxType` values renamed with the `CHECK_TX_TYPE_` prefix.
-  * `MisbehaviorType` values renamed with the `MISBEHAVIOR_TYPE_` prefix.
-  * `Result` enum formerly nested in `ResponseOfferSnapshot` replaced with the package-level
+    - The `Request` and `Response` multiplex messages are redefined accordingly.
+    - `CheckTxType` values renamed with the `CHECK_TX_TYPE_` prefix.
+    - `MisbehaviorType` values renamed with the `MISBEHAVIOR_TYPE_` prefix.
+    - `Result` enum formerly nested in `ResponseOfferSnapshot` replaced with the package-level
     `OfferSnapshotResult`, its values named with the
     `OFFER_SNAPSHOT_RESULT_` prefix.
-  * `Result` enum formerly nested in `ResponseApplyShapshotChunk` replaced with the package-level
+    - `Result` enum formerly nested in `ResponseApplyShapshotChunk` replaced with the package-level
     `ApplySnapshotChunkResult`, its values named with the
     `APPLY_SNAPSHOT_CHUNK_RESULT_` prefix.
-  * `Status` enum formerly nested in `ResponseProcessProposal` replaced with the package-level
+    - `Status` enum formerly nested in `ResponseProcessProposal` replaced with the package-level
     `ProcessProposalStatus`, its values named with the
     `PROCESS_PROPOSAL_STATUS_` prefix.
-  * `Status` enum formerly nested in `ResponseVerifyVoteExtension` replaced with the package-level
+    - `Status` enum formerly nested in `ResponseVerifyVoteExtension` replaced with the package-level
     `VerifyVoteExtensionStatus`, its values named with the
     `VERIFY_VOTE_EXTENSION_STATUS_` prefix.
-  * New definition of `Misbehavior` using the changed `MisbehaviorType`.
-  * The gRPC service is renamed `ABCIService` and defined using the types listed above.
+    - New definition of `Misbehavior` using the changed `MisbehaviorType`.
+    - The gRPC service is renamed `ABCIService` and defined using the types listed above.
 - `[proto]` In the `cometbft.state.v1` package, the definition for `ABCIResponsesInfo`
   is changed, renaming `response_finalize_block` field to `finalize_block`.
 - `[proxy]` Expand `ClientCreator` interface to allow
@@ -422,7 +422,7 @@ on the `/block_results` RPC endpoint.
 
 ### FEATURES
 
--  `[indexer]` Introduces configurable table names for the PSQL indexer.
+- `[indexer]` Introduces configurable table names for the PSQL indexer.
   ([\#3593](https://github.com/cometbft/cometbft/issues/3593))
 - `[config]` Add [`pebbledb`](https://github.com/cockroachdb/pebble). To use, build with
   `pebbledb` tag (`go build -tags pebbledb`) ([\#2132](https://github.com/cometbft/cometbft/pull/2132/))
@@ -489,6 +489,7 @@ on the `/block_results` RPC endpoint.
   ([\#1094](https://github.com/cometbft/cometbft/issues/1094))
 - `[light/store]` Added support for a different DB key representation within the light block store ([\#2327](https://github.com/cometbft/cometbft/pull/2327/))
 - `[mempool]` Add `nop` mempool ([\#1643](https://github.com/cometbft/cometbft/pull/1643)). If you want to use it, change mempool's `type` to `nop`:
+
 ```toml
       [mempool]
 
@@ -502,13 +503,14 @@ on the `/block_results` RPC endpoint.
       # is not supported.
       type = "nop"
 ```
+
 - `[metrics]` Add metric for mempool size in bytes `SizeBytes`.
   ([\#1512](https://github.com/cometbft/cometbft/pull/1512))
 - `[metrics]` Add metrics to monitor pruning and current available data in stores: `PruningServiceBlockRetainHeight`, `PruningServiceBlockResultsRetainHeight`, `ApplicationBlockRetainHeight`, `BlockStoreBaseHeight`, `ABCIResultsBaseHeight`.
   ([\#1234](https://github.com/cometbft/cometbft/pull/1234))
 - `[metrics]` Added metrics to monitor block store access. ([\#1974](https://github.com/cometbft/cometbft/pull/1974))
 - `[metrics]` Added metrics to monitor state store access. ([\#1974](https://github.com/cometbft/cometbft/pull/1974))
-- `[privval]` Add `key-type` flag to all command that _may_ generate a `privval` file,
+- `[privval]` Add `key-type` flag to all command that *may* generate a `privval` file,
   and make `GenFilePV` flexible to accept different key generators.
   ([\#3517](https://github.com/cometbft/cometbft/pull/3517))
 - `[proto]` Add definitions and generated code for
@@ -809,7 +811,7 @@ synchronous event bus subscription.
 This release includes the second part of ABCI++, called ABCI 2.0.
 ABCI 2.0 introduces ABCI methods `ExtendVote` and `VerifyVoteExtension`.
 These new methods allow the application to add data (opaque to CometBFT),
-called _vote extensions_ to precommit votes sent by validators.
+called *vote extensions* to precommit votes sent by validators.
 These vote extensions are made available to the proposer(s) of the next height.
 Additionally, ABCI 2.0 coalesces `BeginBlock`, `DeliverTx`, and `EndBlock`
 into one method, `FinalizeBlock`, whose `Request*` and `Response*`
@@ -901,7 +903,7 @@ for people who forked CometBFT and interact directly with the indexers kvstore.
 - `[light]` Fixed an edge case where a light client would panic when attempting
   to query a node that (1) has started from a non-zero height and (2) does
   not yet have any data. The light client will now, correctly, not panic
-  _and_ keep the node in its list of providers in the same way it would if
+  *and* keep the node in its list of providers in the same way it would if
   it queried a node starting from height zero that does not yet have data
   ([\#575](https://github.com/cometbft/cometbft/issues/575))
 - `[mempool/clist_mempool]` Prevent a transaction to appear twice in the mempool
@@ -1049,7 +1051,7 @@ See below for more details.
   queue is full: retry block request after a timeout
   ([\#9518](https://github.com/tendermint/tendermint/pull/9518))
 - `[consensus]` ([\#386](https://github.com/cometbft/cometbft/pull/386)) Short-term fix for the case when `needProofBlock` cannot find previous block meta by defaulting to the creation of a new proof block. (@adizere)
-  - Special thanks to the [Vega.xyz](https://vega.xyz/) team, and in particular to Zohar (@ze97286), for reporting the problem and working with us to get to a fix.
+    - Special thanks to the [Vega.xyz](https://vega.xyz/) team, and in particular to Zohar (@ze97286), for reporting the problem and working with us to get to a fix.
 - `[consensus]` Fixed a busy loop that happened when sending of a block part failed by sleeping in case of error.
   ([\#4](https://github.com/informalsystems/tendermint/pull/4))
 - `[consensus]` fix round number of `enterPropose`
@@ -1142,7 +1144,7 @@ to this release!
 - `[consensus]` Short-term fix for the case when `needProofBlock` cannot find
   previous block meta by defaulting to the creation of a new proof block.
   ([\#386](https://github.com/cometbft/cometbft/pull/386): @adizere)
-  - Special thanks to the [Vega.xyz](https://vega.xyz/) team, and in particular
+    - Special thanks to the [Vega.xyz](https://vega.xyz/) team, and in particular
     to Zohar (@ze97286), for reporting the problem and working with us to get to
     a fix.
 - `[p2p]` Correctly use non-blocking `TrySendEnvelope` method when attempting to
@@ -1168,7 +1170,7 @@ to this release!
 ### FEATURES
 
 - `[rpc]` Add `match_event` query parameter to indicate to the RPC that it
-  should match events _within_ attributes, not only within a height
+  should match events *within* attributes, not only within a height
   ([tendermint/tendermint\#9759](https://github.com/tendermint/tendermint/pull/9759))
 
 ### IMPROVEMENTS
