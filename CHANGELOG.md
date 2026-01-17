@@ -15,6 +15,8 @@ encouraged to upgrade as soon as possible.
   Cap `SynchronyParams.MessageDelay` to 24hrs.
   Cap `SynchronyParams.Precision` to 30 sec.
   ([\#4815](https://github.com/cometbft/cometbft/issues/4815))
+- `[consensus]` Reject oversized proposals
+  ([\#5324](https://github.com/cometbft/cometbft/pull/5324))
 - `[crypto/bls12381]` Fix JSON marshal of private key
   ([\#4772](https://github.com/cometbft/cometbft/pull/4772))
 - `[crypto/bls12381]` Modify `Sign`, `Verify` to use `dstMinPk`
@@ -1210,4 +1212,3 @@ Friendly reminder, we have a [bug bounty program](https://hackerone.com/cosmos).
 ## Previous changes
 
 For changes released before the creation of CometBFT, please refer to the Tendermint Core [CHANGELOG.md](https://github.com/tendermint/tendermint/blob/a9feb1c023e172b542c972605311af83b777855b/CHANGELOG.md).
-
