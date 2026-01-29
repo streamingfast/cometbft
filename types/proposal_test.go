@@ -221,6 +221,33 @@ func TestProposalProtoBuf(t *testing.T) {
 	}
 }
 
+func TestProposalValidateBlockSize(t *testing.T) {
+	testCases := []struct {
+		testName     string
+		maxBlockSize int64
+		proposal     *Proposal
+		expectPass   bool
+	}{
+		{"10 chunk max, 5 chunk proposal, success", int64(10 * BlockPartSizeBytes), NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: 5}}, cmttime.Now()), true},
+		{"10 chunk max, 20 chunk proposal, fail", int64(10 * BlockPartSizeBytes), NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: 20}}, cmttime.Now()), false},
+		{"10 chunk max, max uint32 chunk proposal, fail", int64(10 * BlockPartSizeBytes), NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: math.MaxUint32}}, cmttime.Now()), false},
+		{"-1 chunk max, max uint32 chunk proposal, fail", -1, NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: math.MaxUint32}}, cmttime.Now()), false},
+		{"0 chunk max, max uint32 chunk proposal, fail", -1, NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: math.MaxUint32}}, cmttime.Now()), false},
+		{"total parts equals chunk max, success", -1, NewProposal(0, 0, 0, BlockID{PartSetHeader: PartSetHeader{Total: 1600}}, cmttime.Now()), true},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.testName, func(t *testing.T) {
+			err := tc.proposal.ValidateBlockSize(tc.maxBlockSize)
+			if tc.expectPass {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestProposalIsTimely(t *testing.T) {
 	timestamp, err := time.Parse(time.RFC3339, "2019-03-13T23:00:00Z")
 	require.NoError(t, err)

@@ -477,13 +477,14 @@ func TestValidatorSetFromProtoReturnsErrorOnOverflow(t *testing.T) {
 	pubKey := ed25519.GenPrivKey().PubKey()
 	pkProto, err := cryptoenc.PubKeyToProto(pubKey)
 	require.NoError(t, err)
+	pkProtoPtr := &pkProto
 
 	protoVals := &cmtproto.ValidatorSet{
 		Validators: []*cmtproto.Validator{
-			{Address: pubKey.Address(), PubKey: pkProto, VotingPower: math.MaxInt64, ProposerPriority: 0},
-			{Address: pubKey.Address(), PubKey: pkProto, VotingPower: math.MaxInt64, ProposerPriority: 0},
+			{Address: pubKey.Address(), PubKey: pkProtoPtr, VotingPower: math.MaxInt64, ProposerPriority: 0},
+			{Address: pubKey.Address(), PubKey: pkProtoPtr, VotingPower: math.MaxInt64, ProposerPriority: 0},
 		},
-		Proposer: &cmtproto.Validator{Address: pubKey.Address(), PubKey: pkProto, VotingPower: math.MaxInt64, ProposerPriority: 0},
+		Proposer: &cmtproto.Validator{Address: pubKey.Address(), PubKey: pkProtoPtr, VotingPower: math.MaxInt64, ProposerPriority: 0},
 	}
 
 	_, err = ValidatorSetFromProto(protoVals)

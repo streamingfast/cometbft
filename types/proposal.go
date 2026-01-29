@@ -82,6 +82,21 @@ func (p *Proposal) ValidateBasic() error {
 	return nil
 }
 
+// ValidateBlockSize ensures a proposal block is not larger than a maximum size,
+// based on the total number of parts reported in the PartSetHeader. If -1 is
+// passed as the maxBlockSizeBytes, MaxBlockSizeBytes will be used.
+func (p *Proposal) ValidateBlockSize(maxBlockSizeBytes int64) error {
+	if maxBlockSizeBytes == -1 {
+		maxBlockSizeBytes = int64(MaxBlockSizeBytes)
+	}
+	totalParts := int64(p.BlockID.PartSetHeader.Total)
+	maxParts := (maxBlockSizeBytes-1)/int64(BlockPartSizeBytes) + 1
+	if totalParts > maxParts {
+		return fmt.Errorf("proposal has too many parts %d (max: %d)", totalParts, maxParts)
+	}
+	return nil
+}
+
 // IsTimely validates that the proposal timestamp is 'timely' according to the
 // proposer-based timestamp algorithm. To evaluate if a proposal is timely, its
 // timestamp is compared to the local time of the validator when it receives
