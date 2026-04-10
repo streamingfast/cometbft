@@ -285,6 +285,12 @@ func TestBytes(t *testing.T) {
 	require.False(t, bA.SetIndex(1, true))
 }
 
+func TestSetIndexRejectsInvalidElemsLength(t *testing.T) {
+	bA := &BitArray{Bits: 130, Elems: make([]uint64, 1)}
+	require.True(t, bA.SetIndex(0, true))
+	require.False(t, bA.SetIndex(65, true))
+}
+
 func TestEmptyFull(t *testing.T) {
 	ns := []int{47, 123}
 	for _, n := range ns {
