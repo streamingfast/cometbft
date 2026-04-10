@@ -5,9 +5,11 @@ package statesync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
+	injmetrics "github.com/InjectiveLabs/metrics/v2"
 	abci "github.com/cometbft/cometbft/abci/types"
 	ssproto "github.com/cometbft/cometbft/api/cometbft/statesync/v1"
 	"github.com/cometbft/cometbft/config"
@@ -37,6 +39,7 @@ type Reactor struct {
 	connQuery proxy.AppConnQuery
 	tempDir   string
 	metrics   *Metrics
+	meter     injmetrics.Meter
 
 	// This will only be set when a state sync is in progress. It is used to feed received
 	// snapshots and chunks into the sync.
@@ -50,12 +53,18 @@ func NewReactor(
 	conn proxy.AppConnSnapshot,
 	connQuery proxy.AppConnQuery,
 	metrics *Metrics,
+	meter injmetrics.Meter,
 ) *Reactor {
+	if meter == nil {
+		meter = injmetrics.NewNilMeter()
+	}
+
 	r := &Reactor{
 		cfg:       cfg,
 		conn:      conn,
 		connQuery: connQuery,
 		metrics:   metrics,
+		meter:     meter,
 	}
 	r.BaseReactor = *p2p.NewBaseReactor("StateSync", r)
 
@@ -117,6 +126,9 @@ func (r *Reactor) Receive(e p2p.Envelope) {
 		r.Switch.StopPeerForError(e.Src, err)
 		return
 	}
+
+	_, stopFn := r.meter.FuncTimingCtx(context.Background(), "Receive", injmetrics.Tag("msg", fmt.Sprintf("%T", e.Message)))
+	defer stopFn()
 
 	switch e.ChannelID {
 	case SnapshotChannel:
@@ -263,7 +275,10 @@ func (r *Reactor) recentSnapshots(n uint32) ([]*snapshot, error) {
 
 // Sync runs a state sync, returning the new state and last commit at the snapshot height.
 // The caller must store the state and commit in the state database and block store.
-func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration) (sm.State, *types.Commit, error) {
+func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration) (state sm.State, commit *types.Commit, err error) {
+	_, stopFn := r.meter.FuncTimingCtx(context.Background(), "Sync")
+	defer stopFn(&err)
+
 	r.mtx.Lock()
 	if r.syncer != nil {
 		r.mtx.Unlock()
@@ -285,7 +300,7 @@ func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration)
 
 	hook()
 
-	state, commit, err := r.syncer.SyncAny(discoveryTime, hook)
+	state, commit, err = r.syncer.SyncAny(discoveryTime, hook)
 
 	r.mtx.Lock()
 	r.syncer = nil

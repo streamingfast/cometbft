@@ -77,6 +77,7 @@ func main() {
 		cfg.DefaultDBProvider,
 		nm.DefaultMetricsProvider(config.Instrumentation),
 		logger,
+		nil,
 	)
 
 	defer func() {

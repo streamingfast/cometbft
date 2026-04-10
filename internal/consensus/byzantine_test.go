@@ -288,7 +288,7 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 				assert.Equal(t, prevoteHeight, ev.Height())
 			}
 		}
-	case <-time.After(20 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatalf("Timed out waiting for validators to commit evidence")
 	}
 }

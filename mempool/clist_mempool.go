@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/InjectiveLabs/metrics/v2"
 	abcicli "github.com/cometbft/cometbft/abci/client"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/config"
@@ -73,6 +74,8 @@ type CListMempool struct {
 
 	logger  log.Logger
 	metrics *Metrics
+
+	meter metrics.Meter
 }
 
 var _ Mempool = &CListMempool{}
@@ -112,6 +115,7 @@ func NewCListMempool(
 		laneBytes:     make(map[LaneID]int64),
 		logger:        log.NewNopLogger(),
 		metrics:       NopMetrics(),
+		meter:         metrics.NewNilMeter(),
 		addTxCh:       make(chan struct{}),
 		addTxLaneSeqs: make(map[LaneID]int64),
 	}
@@ -155,7 +159,10 @@ func NewCListMempool(
 	return mp
 }
 
-func (mem *CListMempool) GetSenders(txKey types.TxKey) ([]p2p.ID, error) {
+func (mem *CListMempool) GetSenders(txKey types.TxKey) (senders []p2p.ID, err error) {
+	_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "GetSenders")
+	defer stopFn(&err)
+
 	mem.txsMtx.RLock()
 	defer mem.txsMtx.RUnlock()
 
@@ -249,6 +256,11 @@ func WithMetrics(metrics *Metrics) CListMempoolOption {
 	return func(mem *CListMempool) { mem.metrics = metrics }
 }
 
+// WithMeter sets the meter.
+func WithMeter(m metrics.Meter) CListMempoolOption {
+	return func(mem *CListMempool) { mem.meter = m }
+}
+
 // Safe for concurrent use by multiple goroutines.
 func (mem *CListMempool) Lock() {
 	mem.updateMtx.Lock()
@@ -334,7 +346,10 @@ func (mem *CListMempool) Contains(txKey types.TxKey) bool {
 
 // It blocks if we're waiting on Update() or Reap().
 // Safe for concurrent use by multiple goroutines.
-func (mem *CListMempool) CheckTx(tx types.Tx, sender p2p.ID) (*abcicli.ReqRes, error) {
+func (mem *CListMempool) CheckTx(tx types.Tx, sender p2p.ID) (res *abcicli.ReqRes, err error) {
+	_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "CheckTx")
+	defer stopFn(&err)
+
 	mem.updateMtx.RLock()
 	// use defer to unlock mutex because application (*local client*) might panic
 	defer mem.updateMtx.RUnlock()
@@ -386,7 +401,13 @@ func (mem *CListMempool) CheckTx(tx types.Tx, sender p2p.ID) (*abcicli.ReqRes, e
 	if err != nil {
 		panic(fmt.Errorf("CheckTx request for tx %s failed: %w", log.NewLazySprintf("%X", tx.Hash()), err))
 	}
-	reqRes.SetCallback(mem.handleCheckTxResponse(tx, sender))
+	reqRes.SetCallback(func(res *abci.Response) (callbackErr error) {
+		_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "CheckTx.Callback")
+		defer stopFn(&callbackErr)
+
+		callbackErr = mem.handleCheckTxResponse(tx, sender)(res)
+		return callbackErr
+	})
 
 	return reqRes, nil
 }
@@ -680,6 +701,9 @@ func (mem *CListMempool) notifyTxsAvailable() {
 
 // Safe for concurrent use by multiple goroutines.
 func (mem *CListMempool) ReapMaxBytesMaxGas(maxBytes, maxGas int64) types.Txs {
+	_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "ReapMaxBytesMaxGas")
+	defer stopFn()
+
 	mem.updateMtx.RLock()
 	defer mem.updateMtx.RUnlock()
 
@@ -724,6 +748,9 @@ func (mem *CListMempool) ReapMaxBytesMaxGas(maxBytes, maxGas int64) types.Txs {
 
 // Safe for concurrent use by multiple goroutines.
 func (mem *CListMempool) ReapMaxTxs(max int) types.Txs {
+	_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "ReapMaxTxs")
+	defer stopFn()
+
 	mem.updateMtx.RLock()
 	defer mem.updateMtx.RUnlock()
 
@@ -745,6 +772,9 @@ func (mem *CListMempool) ReapMaxTxs(max int) types.Txs {
 
 // GetTxByHash returns the types.Tx with the given hash if found in the mempool, otherwise returns nil.
 func (mem *CListMempool) GetTxByHash(hash []byte) types.Tx {
+	_, stopFn := mem.meter.FuncTimingCtx(context.Background(), "GetTxByHash")
+	defer stopFn()
+
 	mem.txsMtx.RLock()
 	defer mem.txsMtx.RUnlock()
 
@@ -762,7 +792,10 @@ func (mem *CListMempool) Update(
 	txResults []*abci.ExecTxResult,
 	preCheck PreCheckFunc,
 	postCheck PostCheckFunc,
-) error {
+) (err error) {
+	ctx, stopFn := mem.meter.FuncTimingCtx(context.Background(), "Update")
+	defer stopFn(&err)
+
 	mem.logger.Debug("Update", "height", height, "len(txs)", len(txs))
 
 	// Set height
@@ -803,7 +836,7 @@ func (mem *CListMempool) Update(
 
 	// Recheck txs left in the mempool to remove them if they became invalid in the new state.
 	if mem.config.Recheck {
-		mem.recheckTxs()
+		mem.recheckTxs(ctx)
 	}
 
 	// Notify if there are still txs left in the mempool.
@@ -831,7 +864,10 @@ func (mem *CListMempool) updateSizeMetrics(laneID LaneID) {
 
 // recheckTxs sends all transactions in the mempool to the app for re-validation. When the function
 // returns, all recheck responses from the app have been processed.
-func (mem *CListMempool) recheckTxs() {
+func (mem *CListMempool) recheckTxs(ctx context.Context) {
+	_, stopFn := mem.meter.FuncTimingCtx(ctx, "recheckTxs")
+	defer stopFn()
+
 	mem.logger.Debug("Recheck txs", "height", mem.height.Load(), "num-txs", mem.Size())
 
 	if mem.Size() <= 0 {

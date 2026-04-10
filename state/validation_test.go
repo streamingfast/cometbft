@@ -207,9 +207,11 @@ func TestValidateBlockCommit(t *testing.T) {
 			/*
 				#2589: test len(block.LastCommit.Signatures) == state.LastValidators.Size()
 			*/
-			_, err = makeBlock(state, height, wrongSigsCommit)
-			require.Error(t, err)
-			require.ErrorContains(t, err, "error making block")
+			block, err = makeBlock(state, height, wrongSigsCommit)
+			require.NoError(t, err)
+			err = blockExec.ValidateBlock(state, block)
+			_, isErrInvalidCommitSignatures := err.(cmterrors.ErrInvalidCommitSignatures)
+			require.True(t, isErrInvalidCommitSignatures, "expected ErrInvalidCommitSignatures at height %d but got: %v", height, err)
 		}
 
 		/*
