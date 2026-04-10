@@ -253,6 +253,10 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 	// Evidence should be submitted and committed at the third height but
 	// we will check the first six just in case
 	evidenceFromEachValidator := make([]types.Evidence, nValidators)
+	// The CI test split runs this package with -race alongside many other
+	// packages in the same go test invocation, so give evidence propagation
+	// extra headroom for slower cold runs.
+	evidenceCommitTimeout := 2 * time.Minute
 
 	wg := new(sync.WaitGroup)
 	for i := 0; i < nValidators; i++ {
@@ -288,7 +292,7 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 				assert.Equal(t, prevoteHeight, ev.Height())
 			}
 		}
-	case <-time.After(60 * time.Second):
+	case <-time.After(evidenceCommitTimeout):
 		t.Fatalf("Timed out waiting for validators to commit evidence")
 	}
 }
