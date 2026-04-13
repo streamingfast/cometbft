@@ -968,7 +968,7 @@ func TestMempoolSyncRecheckTxReturnError(t *testing.T) {
 			t.Errorf("recheckTxs did not panic")
 		}
 	}()
-	mp.recheckTxs()
+	mp.recheckTxs(context.TODO())
 }
 
 // Test that rechecking finishes correctly when a CheckTx response never arrives, when using an
@@ -1025,7 +1025,7 @@ func TestMempoolAsyncRecheckTxReturnError(t *testing.T) {
 	}).Return(nil)
 
 	// mp.recheck.done() should be true only before and after calling recheckTxs.
-	mp.recheckTxs()
+	mp.recheckTxs(context.TODO())
 	require.True(t, mp.recheck.done())
 	require.False(t, mp.recheck.isRechecking.Load())
 	require.Nil(t, mp.recheck.cursor)

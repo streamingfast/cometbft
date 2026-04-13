@@ -488,7 +488,8 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 
 	pv, err := privval.LoadOrGenFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile(), nil)
 	require.NoError(t, err)
-	n, err := NewNode(context.Background(),
+	n, err := NewNode(
+		context.Background(),
 		config,
 		pv,
 		nodeKey,
@@ -497,6 +498,7 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 		cfg.DefaultDBProvider,
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
+		nil,
 		CustomReactors(map[string]p2p.Reactor{"FOO": cr, "BLOCKSYNC": customBlocksyncReactor}),
 	)
 	require.NoError(t, err)
@@ -552,6 +554,7 @@ func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
 		cfg.DefaultDBProvider,
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -595,6 +598,7 @@ func TestNodeNewNodeGenesisHashMismatch(t *testing.T) {
 		cfg.DefaultDBProvider,
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -639,6 +643,7 @@ func TestNodeNewNodeGenesisHashMismatch(t *testing.T) {
 		cfg.DefaultDBProvider,
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
+		nil,
 	)
 	require.Error(t, err, "NewNode should error when genesisDoc is changed")
 	require.Equal(t, "genesis doc hash in db does not match loaded genesis doc", err.Error())
@@ -672,6 +677,7 @@ func TestNodeGenesisHashFlagMatch(t *testing.T) {
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
 		cliParams,
+		nil,
 	)
 	require.NoError(t, err)
 }
@@ -707,6 +713,7 @@ func TestNodeGenesisHashFlagMismatch(t *testing.T) {
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
 		cliParams,
+		nil,
 	)
 	require.Error(t, err)
 

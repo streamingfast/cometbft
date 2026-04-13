@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,12 +38,15 @@ var (
 )
 
 const (
-	user     = "postgres"
-	password = "secret"
-	port     = "5432"
-	dsn      = "postgres://%s:%s@localhost:%s/%s?sslmode=disable"
-	dbName   = "postgres"
-	chainID  = "test-chainID"
+	user            = "postgres"
+	password        = "secret"
+	port            = "5432"
+	portID          = port + "/tcp"
+	hostIP          = "127.0.0.1"
+	dsn             = "postgres://%s:%s@%s/%s?sslmode=disable"
+	dbName          = "postgres"
+	chainID         = "test-chainID"
+	startMaxRetries = 5
 
 	viewBlockEvents = "block_events"
 	viewTxEvents    = "tx_events"
@@ -56,27 +60,19 @@ func TestMain(m *testing.M) {
 	// Set up docker and start a container running PostgreSQL.
 	pool, err := dockertest.NewPool(os.Getenv("DOCKER_URL"))
 	if err != nil {
+		if dockerUnavailable(err) {
+			log.Printf("Skipping PostgreSQL integration tests: %v", err)
+			os.Exit(0)
+		}
 		log.Fatalf("Creating docker pool: %v", err)
 	}
 
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        "13",
-		Env: []string{
-			"POSTGRES_USER=" + user,
-			"POSTGRES_PASSWORD=" + password,
-			"POSTGRES_DB=" + dbName,
-			"listen_addresses = '*'",
-		},
-		ExposedPorts: []string{port},
-	}, func(config *docker.HostConfig) {
-		// set AutoRemove to true so that stopped container goes away by itself
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{
-			Name: "no",
-		}
-	})
+	resource, err := startPostgresContainer(pool)
 	if err != nil {
+		if dockerUnavailable(err) {
+			log.Printf("Skipping PostgreSQL integration tests: %v", err)
+			os.Exit(0)
+		}
 		log.Fatalf("Starting docker pool: %v", err)
 	}
 
@@ -90,7 +86,7 @@ func TestMain(m *testing.M) {
 
 	// Connect to the database, clear any leftover data, and install the
 	// indexing schema.
-	conn := fmt.Sprintf(dsn, user, password, resource.GetPort(port+"/tcp"), dbName)
+	conn := fmt.Sprintf(dsn, user, password, resource.GetHostPort(portID), dbName)
 	var db *sql.DB
 
 	if err := pool.Retry(func() error {
@@ -138,6 +134,91 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(code)
+}
+
+func dockerUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+	return strings.Contains(msg, "docker.sock") ||
+		strings.Contains(msg, "Cannot connect to the Docker daemon") ||
+		strings.Contains(msg, "connection refused")
+}
+
+func startPostgresContainer(pool *dockertest.Pool) (*dockertest.Resource, error) {
+	var err error
+
+	for attempt := 1; attempt <= startMaxRetries; attempt++ {
+		name := fmt.Sprintf("cometbft-psql-test-%d-%d", os.Getpid(), time.Now().UnixNano())
+
+		resource, runErr := pool.RunWithOptions(&dockertest.RunOptions{
+			Name:       name,
+			Repository: "postgres",
+			Tag:        "13",
+			Env: []string{
+				"POSTGRES_USER=" + user,
+				"POSTGRES_PASSWORD=" + password,
+				"POSTGRES_DB=" + dbName,
+				"listen_addresses = '*'",
+			},
+			ExposedPorts: []string{port},
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				docker.Port(portID): {{
+					HostIP:   hostIP,
+					HostPort: "",
+				}},
+			},
+		}, func(config *docker.HostConfig) {
+			config.PublishAllPorts = false
+			// set AutoRemove to true so that stopped container goes away by itself
+			config.AutoRemove = true
+			config.RestartPolicy = docker.RestartPolicy{
+				Name: "no",
+			}
+		})
+		if runErr == nil {
+			return resource, nil
+		}
+
+		err = runErr
+		if dockerUnavailable(err) {
+			return nil, err
+		}
+
+		if !dockerStartupRetryable(err) || attempt == startMaxRetries {
+			return nil, err
+		}
+
+		cleanupFailedContainer(pool, name)
+		log.Printf("Retrying PostgreSQL container startup after transient Docker error (%d/%d): %v", attempt, startMaxRetries, err)
+		time.Sleep(time.Duration(attempt) * time.Second)
+	}
+
+	return nil, err
+}
+
+func dockerStartupRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+	return strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "port is already allocated")
+}
+
+func cleanupFailedContainer(pool *dockertest.Pool, name string) {
+	var noSuchContainer *docker.NoSuchContainer
+
+	if err := pool.Client.RemoveContainer(docker.RemoveContainerOptions{
+		ID:            name,
+		Force:         true,
+		RemoveVolumes: true,
+	}); err != nil && !dockerUnavailable(err) && !errors.As(err, &noSuchContainer) {
+		log.Printf("WARNING: failed to remove transient PostgreSQL test container %q: %v", name, err)
+	}
 }
 
 func TestIndexing(t *testing.T) {

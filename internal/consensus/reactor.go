@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	injmetrics "github.com/InjectiveLabs/metrics/v2"
 	cmtcons "github.com/cometbft/cometbft/api/cometbft/consensus/v1"
 	"github.com/cometbft/cometbft/internal/bits"
 	cstypes "github.com/cometbft/cometbft/internal/consensus/types"
@@ -51,6 +53,7 @@ type Reactor struct {
 	initialHeight int64 // under rsMtx
 
 	Metrics *Metrics
+	meter   injmetrics.Meter
 }
 
 type ReactorOption func(*Reactor)
@@ -63,6 +66,7 @@ func NewReactor(consensusState *State, waitSync bool, options ...ReactorOption) 
 		rs:            consensusState.GetRoundState(),
 		initialHeight: consensusState.state.InitialHeight,
 		Metrics:       NopMetrics(),
+		meter:         injmetrics.NewNilMeter(),
 	}
 	conR.BaseReactor = *p2p.NewBaseReactor("Consensus", conR)
 	if waitSync {
@@ -265,6 +269,9 @@ func (conR *Reactor) Receive(e p2p.Envelope) {
 		panic(fmt.Sprintf("Peer %v has no state", e.Src))
 	}
 
+	_, stopFn := conR.meter.FuncTimingCtx(context.Background(), "Receive", injmetrics.Tag("msg", fmt.Sprintf("%T", msg)))
+	defer stopFn()
+
 	switch e.ChannelID {
 	case StateChannel:
 		switch msg := msg.(type) {
@@ -332,6 +339,15 @@ func (conR *Reactor) Receive(e p2p.Envelope) {
 		}
 		switch msg := msg.(type) {
 		case *ProposalMessage:
+			conR.conS.mtx.RLock()
+			maxBytes := conR.conS.state.ConsensusParams.Block.MaxBytes
+			conR.conS.mtx.RUnlock()
+			if err := msg.Proposal.ValidateBlockSize(maxBytes); err != nil {
+				conR.Logger.Error("Rejecting oversized proposal", "peer", e.Src, "height", msg.Proposal.Height)
+				conR.Switch.StopPeerForError(e.Src, ErrProposalTooManyParts)
+				return
+			}
+
 			ps.SetHasProposal(msg.Proposal)
 			conR.conS.peerMsgQueue <- msgInfo{msg, e.Src.ID(), cmttime.Now()}
 		case *ProposalPOLMessage:
@@ -1070,6 +1086,11 @@ func ReactorMetrics(metrics *Metrics) ReactorOption {
 	return func(conR *Reactor) { conR.Metrics = metrics }
 }
 
+// ReactorMeter sets the tracing meter.
+func ReactorMeter(meter injmetrics.Meter) ReactorOption {
+	return func(conR *Reactor) { conR.meter = meter }
+}
+
 // -----------------------------------------------------------------------------
 
 // PeerState contains the known state of a peer, including its connection and
@@ -1791,6 +1812,12 @@ type ProposalMessage struct {
 // ValidateBasic performs basic validation.
 func (m *ProposalMessage) ValidateBasic() error {
 	return m.Proposal.ValidateBasic()
+}
+
+// ValidateBlockSize validates the proposal's block size against a maximum. If
+// -1 is passed, types.MaxBlockSizeBytes will be used as the maximum.
+func (m *ProposalMessage) ValidateBlockSize(maxBlockSizeBytes int64) error {
+	return m.Proposal.ValidateBlockSize(maxBlockSizeBytes)
 }
 
 // String returns a string representation.
