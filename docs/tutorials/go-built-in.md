@@ -142,7 +142,7 @@ The go.mod file should look similar to:
 ```go
 module kvstore
 
-go 1.23
+go 1.26.2
 
 require github.com/cometbft/cometbft v1.0.0 // indirect
 ```

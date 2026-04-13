@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	injmetrics "github.com/InjectiveLabs/metrics/v2"
 	cmtcons "github.com/cometbft/cometbft/api/cometbft/consensus/v1"
 	"github.com/cometbft/cometbft/internal/bits"
 	cstypes "github.com/cometbft/cometbft/internal/consensus/types"
@@ -51,6 +53,7 @@ type Reactor struct {
 	initialHeight int64 // under rsMtx
 
 	Metrics *Metrics
+	meter   injmetrics.Meter
 }
 
 type ReactorOption func(*Reactor)
@@ -63,6 +66,7 @@ func NewReactor(consensusState *State, waitSync bool, options ...ReactorOption) 
 		rs:            consensusState.GetRoundState(),
 		initialHeight: consensusState.state.InitialHeight,
 		Metrics:       NopMetrics(),
+		meter:         injmetrics.NewNilMeter(),
 	}
 	conR.BaseReactor = *p2p.NewBaseReactor("Consensus", conR)
 	if waitSync {
@@ -264,6 +268,9 @@ func (conR *Reactor) Receive(e p2p.Envelope) {
 	if !ok {
 		panic(fmt.Sprintf("Peer %v has no state", e.Src))
 	}
+
+	_, stopFn := conR.meter.FuncTimingCtx(context.Background(), "Receive", injmetrics.Tag("msg", fmt.Sprintf("%T", msg)))
+	defer stopFn()
 
 	switch e.ChannelID {
 	case StateChannel:
@@ -1077,6 +1084,11 @@ func (conR *Reactor) StringIndented(indent string) string {
 // ReactorMetrics sets the metrics.
 func ReactorMetrics(metrics *Metrics) ReactorOption {
 	return func(conR *Reactor) { conR.Metrics = metrics }
+}
+
+// ReactorMeter sets the tracing meter.
+func ReactorMeter(meter injmetrics.Meter) ReactorOption {
+	return func(conR *Reactor) { conR.meter = meter }
 }
 
 // -----------------------------------------------------------------------------
