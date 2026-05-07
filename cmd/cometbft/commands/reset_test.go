@@ -51,3 +51,28 @@ func Test_ResetState(t *testing.T) {
 	// private validator state should still be in tact.
 	require.Equal(t, int64(10), pv.LastSignState.Height)
 }
+
+func TestRollbackFilePVState(t *testing.T) {
+	config := cfg.TestConfig()
+	dir := t.TempDir()
+	config.SetRoot(dir)
+	cfg.EnsureRoot(dir)
+	require.NoError(t, initFilesWithConfig(config))
+
+	pv := privval.LoadFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile())
+	pv.LastSignState.Height = 21
+	pv.LastSignState.Round = 2
+	pv.LastSignState.Step = 3
+	pv.LastSignState.Signature = []byte{1, 2, 3}
+	pv.LastSignState.SignBytes = []byte{4, 5, 6}
+	pv.Save()
+
+	require.NoError(t, rollbackFilePVState(config, 16))
+
+	pv = privval.LoadFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile())
+	require.Equal(t, int64(16), pv.LastSignState.Height)
+	require.Equal(t, int32(0), pv.LastSignState.Round)
+	require.Equal(t, int8(0), pv.LastSignState.Step)
+	require.Nil(t, pv.LastSignState.Signature)
+	require.Nil(t, pv.LastSignState.SignBytes)
+}
