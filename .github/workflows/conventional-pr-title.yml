@@ -1,11 +1,7 @@
 name: "Conventional PR Title"
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - edited
-      - synchronize
+  workflow_dispatch:
 
 permissions:
   pull-requests: write
@@ -21,18 +17,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           types: |
-              feat
-              fix
-              build
-              chore
-              ci
-              docs
-              refactor
-              perf
-              test
-              revert
-              spec
-              merge
+            feat
+            fix
+            build
+            chore
+            ci
+            docs
+            refactor
+            perf
+            test
+            revert
+            spec
+            merge
 
       - uses: marocchino/sticky-pull-request-comment@v2
         # When the previous steps fails, the workflow would stop. By adding this

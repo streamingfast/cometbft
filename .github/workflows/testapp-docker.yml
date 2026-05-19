@@ -2,14 +2,7 @@ name: Docker E2E Node
 # Build & Push rebuilds the e2e Testapp docker image on every push to main and creation of tags
 # and pushes the image to https://hub.docker.com/r/cometbft/e2e-node
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"               # Push events to matching v*, i.e. v1.0, v20.15.10
-      - "v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+"  # e.g. v0.37.0-alpha.1, v0.38.0-alpha.10
-      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"   # e.g. v0.37.0-beta.1, v0.38.0-beta.10
-      - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"      # e.g. v0.37.0-rc1, v0.38.0-rc10
+  workflow_dispatch:
 
 jobs:
   build:

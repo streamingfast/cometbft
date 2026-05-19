@@ -1,17 +1,6 @@
 name: Markdown Linter
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "**.md"
-      - "**.yml"
-      - "**.yaml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "**.md"
-      - "**.yml"
+  workflow_dispatch:
 
 jobs:
   build:

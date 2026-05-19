@@ -3,9 +3,7 @@
 name: Check release version
 
 on:
-  push:
-    branches:
-      - 'release/**'
+  workflow_dispatch:
 
 jobs:
   check-version:

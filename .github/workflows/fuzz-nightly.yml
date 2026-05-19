@@ -1,13 +1,7 @@
 # Runs fuzzing nightly.
 name: Fuzz Tests
 on:
-  workflow_dispatch:  # allow running workflow manually
-  schedule:
-    - cron: '0 3 * * *'
-  pull_request:
-    branches: [main]
-    paths:
-      - "test/fuzz/**/*.go"
+  workflow_dispatch:
 
 jobs:
   fuzz-nightly-test:

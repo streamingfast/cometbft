@@ -6,9 +6,7 @@
 
 name: e2e-nightly-main
 on:
-  workflow_dispatch:  # allow running workflow manually
-#   schedule:
-#     - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
   e2e-nightly-test:
@@ -17,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ['00', '01', '02', '03', "04"]
+        group: ["00", "01", "02", "03", "04"]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
