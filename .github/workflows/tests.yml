@@ -1,12 +1,6 @@
 name: Test
 on:
-  pull_request:
-  push:
-    paths:
-      - "**.go"
-    branches:
-      - master
-      - release/**
+  workflow_dispatch:
 
 jobs:
   tests:

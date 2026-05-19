@@ -4,13 +4,7 @@
 # For documentation build info, see docs/DOCS_README.md.
 name: Build static documentation site
 on:
-  workflow_dispatch:  # allow manual updates
-  push:
-    branches:
-      - master
-    paths:
-      - docs/**
-      - spec/**
+  workflow_dispatch:
 
 jobs:
   # This is split into two jobs so that the build, which runs npm, does not
@@ -57,6 +51,6 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: 'docs-tendermint-com'
+          branch: "docs-tendermint-com"
           folder: ~/output
           single-commit: true

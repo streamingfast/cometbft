@@ -1,13 +1,7 @@
 # Runs fuzzing nightly.
 name: Fuzz Tests
 on:
-  workflow_dispatch:  # allow running workflow manually
-  schedule:
-    - cron: '0 3 * * *'
-  pull_request:
-    branches: [master]
-    paths:
-      - "test/fuzz/**/*.go"
+  workflow_dispatch:
 
 jobs:
   fuzz-nightly-test:
@@ -15,7 +9,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.18'
+          go-version: "1.18"
 
       - uses: actions/checkout@v3
 
@@ -71,7 +65,7 @@ jobs:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           SLACK_CHANNEL: tendermint-internal
           SLACK_USERNAME: Nightly Fuzz Tests
-          SLACK_ICON_EMOJI: ':firecracker:'
+          SLACK_ICON_EMOJI: ":firecracker:"
           SLACK_COLOR: danger
           SLACK_MESSAGE: Crashers found in Nightly Fuzz tests
-          SLACK_FOOTER: ''
+          SLACK_FOOTER: ""

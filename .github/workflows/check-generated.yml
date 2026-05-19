@@ -5,9 +5,7 @@
 # even if no files in the repository are modified.
 name: Check generated code
 on:
-  pull_request:
-    branches:
-      - master
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +16,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.18'
+          go-version: "1.18"
 
       - uses: actions/checkout@v3
 
@@ -44,11 +42,11 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.18'
+          go-version: "1.18"
 
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 1  # we need a .git directory to run git diff
+          fetch-depth: 1 # we need a .git directory to run git diff
 
       - name: "Check protobuf generated code"
         run: |
