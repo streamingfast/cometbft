@@ -286,7 +286,7 @@ func DefaultBaseConfig() BaseConfig {
 		LogLevel:           DefaultLogLevel,
 		LogFormat:          LogFormatPlain,
 		FilterPeers:        false,
-		DBBackend:          "pebbledb",
+		DBBackend:          "goleveldb",
 		DBPath:             DefaultDataDir,
 	}
 }
