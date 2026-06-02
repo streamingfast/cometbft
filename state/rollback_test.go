@@ -2,6 +2,7 @@ package state_test
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
@@ -202,6 +203,51 @@ func TestRollbackHard(t *testing.T) {
 	require.Equal(t, rollbackHash, currState.AppHash)
 }
 
+func TestRollbackNHard(t *testing.T) {
+	const (
+		chainHeight  int64 = 20
+		targetHeight int64 = 10
+	)
+
+	blockStore := store.NewBlockStore(dbm.NewMemDB())
+	stateStore := state.NewStore(dbm.NewMemDB(), state.StoreOptions{DiscardABCIResponses: false})
+	states := setupRollbackNChain(t, blockStore, stateStore, chainHeight)
+
+	rollbackHeight, rollbackHash, err := state.RollbackN(blockStore, stateStore, true, chainHeight-targetHeight)
+	require.NoError(t, err)
+	require.Equal(t, targetHeight, rollbackHeight)
+	require.Equal(t, states[targetHeight].AppHash, rollbackHash)
+	require.Equal(t, targetHeight, blockStore.Height())
+	require.NotNil(t, blockStore.LoadBlockMeta(targetHeight))
+	require.Nil(t, blockStore.LoadBlockMeta(targetHeight+1))
+
+	loadedState, err := stateStore.Load()
+	require.NoError(t, err)
+	require.Equal(t, states[targetHeight], loadedState)
+}
+
+func TestRollbackNSoftKeepsBlocks(t *testing.T) {
+	const (
+		chainHeight  int64 = 20
+		targetHeight int64 = 15
+	)
+
+	blockStore := store.NewBlockStore(dbm.NewMemDB())
+	stateStore := state.NewStore(dbm.NewMemDB(), state.StoreOptions{DiscardABCIResponses: false})
+	states := setupRollbackNChain(t, blockStore, stateStore, chainHeight)
+
+	rollbackHeight, rollbackHash, err := state.RollbackN(blockStore, stateStore, false, chainHeight-targetHeight)
+	require.NoError(t, err)
+	require.Equal(t, targetHeight, rollbackHeight)
+	require.Equal(t, states[targetHeight].AppHash, rollbackHash)
+	require.Equal(t, chainHeight, blockStore.Height())
+	require.NotNil(t, blockStore.LoadBlockMeta(chainHeight))
+
+	loadedState, err := stateStore.Load()
+	require.NoError(t, err)
+	require.Equal(t, states[targetHeight], loadedState)
+}
+
 func TestRollbackNoState(t *testing.T) {
 	stateStore := state.NewStore(dbm.NewMemDB(),
 		state.StoreOptions{
@@ -270,6 +316,101 @@ func setupStateStore(t *testing.T, height int64) state.Store {
 	}
 	require.NoError(t, stateStore.Bootstrap(initialState))
 	return stateStore
+}
+
+func setupRollbackNChain(t *testing.T, blockStore *store.BlockStore, stateStore state.Store, chainHeight int64) map[int64]state.State {
+	t.Helper()
+
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	valSet, _ := types.RandValidatorSet(4, 10)
+	params := types.DefaultConsensusParams()
+	params.Version.App = 1
+
+	currState := state.State{
+		Version: cmtstate.Version{
+			Consensus: cmtversion.Consensus{
+				Block: version.BlockProtocol,
+				App:   params.Version.App,
+			},
+			Software: version.CMTSemVer,
+		},
+		ChainID:                          "rollback-n-test-chain",
+		InitialHeight:                    1,
+		LastBlockTime:                    now,
+		Validators:                       valSet,
+		NextValidators:                   valSet.CopyIncrementProposerPriority(1),
+		LastValidators:                   types.NewValidatorSet(nil),
+		LastHeightValidatorsChanged:      1,
+		ConsensusParams:                  *params,
+		LastHeightConsensusParamsChanged: 1,
+		LastResultsHash:                  tmhash.Sum([]byte("results_0")),
+		AppHash:                          tmhash.Sum([]byte("app_hash_0")),
+	}
+	require.NoError(t, stateStore.Bootstrap(currState))
+
+	states := make(map[int64]state.State, chainHeight)
+	for height := int64(1); height <= chainHeight; height++ {
+		block := &types.Block{
+			Header: types.Header{
+				Version:            currState.Version.Consensus,
+				ChainID:            currState.ChainID,
+				Time:               now.Add(time.Duration(height) * time.Second),
+				Height:             height,
+				AppHash:            currState.AppHash,
+				LastBlockID:        currState.LastBlockID,
+				ValidatorsHash:     currState.Validators.Hash(),
+				NextValidatorsHash: currState.NextValidators.Hash(),
+				ConsensusHash:      currState.ConsensusParams.Hash(),
+				LastResultsHash:    currState.LastResultsHash,
+				ProposerAddress:    currState.Validators.Proposer.Address,
+			},
+			LastCommit: &types.Commit{Height: height - 1},
+		}
+		partSet, err := block.MakePartSet(types.BlockPartSizeBytes)
+		require.NoError(t, err)
+		blockStore.SaveBlock(block, partSet, &types.Commit{Height: height})
+		blockID := types.BlockID{Hash: block.Hash(), PartSetHeader: partSet.Header()}
+
+		nextValidators := currState.NextValidators.Copy()
+		lastHeightValidatorsChanged := currState.LastHeightValidatorsChanged
+		if height == 7 || height == 15 {
+			newValidator, _ := types.RandValidator(false, 10)
+			require.NoError(t, nextValidators.UpdateWithChangeSet([]*types.Validator{newValidator}))
+			lastHeightValidatorsChanged = height + 2
+		}
+		nextValidators.IncrementProposerPriority(1)
+
+		nextParams := currState.ConsensusParams
+		lastHeightConsensusParamsChanged := currState.LastHeightConsensusParamsChanged
+		nextVersion := currState.Version
+		if height == 7 || height == 15 {
+			nextParams.Block.MaxBytes += height
+			nextParams.Version.App++
+			nextVersion.Consensus.App = nextParams.Version.App
+			lastHeightConsensusParamsChanged = height + 1
+		}
+
+		currState = state.State{
+			Version:                          nextVersion,
+			ChainID:                          currState.ChainID,
+			InitialHeight:                    currState.InitialHeight,
+			LastBlockHeight:                  height,
+			LastBlockID:                      blockID,
+			LastBlockTime:                    block.Time,
+			NextValidators:                   nextValidators,
+			Validators:                       currState.NextValidators.Copy(),
+			LastValidators:                   currState.Validators.Copy(),
+			LastHeightValidatorsChanged:      lastHeightValidatorsChanged,
+			ConsensusParams:                  nextParams,
+			LastHeightConsensusParamsChanged: lastHeightConsensusParamsChanged,
+			LastResultsHash:                  tmhash.Sum([]byte(fmt.Sprintf("results_%d", height))),
+			AppHash:                          tmhash.Sum([]byte(fmt.Sprintf("app_hash_%d", height))),
+		}
+		require.NoError(t, stateStore.Save(currState))
+		states[height] = currState
+	}
+
+	return states
 }
 
 func makeBlockIDRandom() types.BlockID {
