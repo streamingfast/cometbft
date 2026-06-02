@@ -189,6 +189,7 @@ type MempoolTx interface {
 	GasWanted() int64
 	Tx() types.Tx
 	IsSender(peerID p2p.ID) bool
+	// AddSender adds peerID to the list of tx senders list. Returns true if sender was already present in the list.
 	AddSender(peerID p2p.ID) bool
 	Senders() []p2p.ID
 }
