@@ -241,7 +241,7 @@ func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, b
 		SyncingToHeight:       syncingToHeight,
 		LastBlockHash:         block.LastBlockID.Hash,
 		LastBlockPartSetTotal: int64(block.LastBlockID.PartSetHeader.Total),
-		LastBlockPartSetHash:  block.LastBlockID.Hash,
+		LastBlockPartSetHash:  block.LastBlockID.PartSetHeader.Hash,
 		AppHash:               block.AppHash,
 		ValidatorsHash:        block.ValidatorsHash,
 		ConsensusHash:         block.ConsensusHash,

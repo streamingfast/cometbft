@@ -79,6 +79,70 @@ func TestApplyBlock(t *testing.T) {
 	assert.EqualValues(t, 1, state.Version.Consensus.App, "App version wasn't updated")
 }
 
+// TestFinalizeBlockLastBlockPartSetHash ensures applyBlock forwards the previous
+// block's PartSet merkle hash, not the previous block hash, on FinalizeBlockRequest.
+func TestFinalizeBlockLastBlockPartSetHash(t *testing.T) {
+	app := &testApp{}
+	cc := proxy.NewLocalClientCreator(app)
+	proxyApp := proxy.NewAppConns(cc, proxy.NopMetrics())
+	err := proxyApp.Start()
+	require.NoError(t, err)
+	defer proxyApp.Stop() //nolint:errcheck // ignore for tests
+
+	state, stateDB, privVals := makeState(1, 1, chainID)
+	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
+		DiscardABCIResponses: false,
+	})
+	blockStore := store.NewBlockStore(dbm.NewMemDB())
+
+	mp := &mpmocks.Mempool{}
+	mp.On("Lock").Return()
+	mp.On("Unlock").Return()
+	mp.On("PreUpdate").Return()
+	mp.On("FlushAppConn", mock.Anything).Return(nil)
+	mp.On("Update",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything).Return(nil)
+	blockExec := sm.NewBlockExecutor(stateStore, log.TestingLogger(), proxyApp.Consensus(),
+		mp, sm.EmptyEvidencePool{}, blockStore)
+
+	// Small part size so height 1 is split (total>=2) and the two hashes differ.
+	const smallPartSize uint32 = 64
+	block1, err := makeBlock(state, 1, new(types.Commit))
+	require.NoError(t, err)
+	bps1, err := block1.MakePartSet(smallPartSize)
+	require.NoError(t, err)
+	blockID1 := types.BlockID{Hash: block1.Hash(), PartSetHeader: bps1.Header()}
+	require.GreaterOrEqual(t, blockID1.PartSetHeader.Total, uint32(2))
+	require.NotEqual(t, blockID1.Hash, blockID1.PartSetHeader.Hash)
+
+	state, err = blockExec.ApplyBlock(state, blockID1, block1, block1.Height)
+	require.NoError(t, err)
+
+	lastCommit, err := makeValidCommit(1, blockID1, state.Validators, privVals)
+	require.NoError(t, err)
+
+	block2, err := makeBlock(state, 2, lastCommit.ToCommit())
+	require.NoError(t, err)
+	require.Equal(t, blockID1, block2.LastBlockID)
+
+	bps2, err := block2.MakePartSet(testPartSize)
+	require.NoError(t, err)
+	blockID2 := types.BlockID{Hash: block2.Hash(), PartSetHeader: bps2.Header()}
+
+	_, err = blockExec.ApplyBlock(state, blockID2, block2, block2.Height)
+	require.NoError(t, err)
+
+	require.EqualValues(t, []byte(block2.LastBlockID.Hash), app.LastBlockHash)
+	require.EqualValues(t, []byte(block2.LastBlockID.PartSetHeader.Hash), app.LastBlockPartSetHash)
+	require.Equal(t, int64(block2.LastBlockID.PartSetHeader.Total), app.LastBlockPartSetTotal)
+	require.NotEqual(t, app.LastBlockHash, app.LastBlockPartSetHash)
+}
+
 // TestFinalizeBlockDecidedLastCommit ensures we correctly send the
 // DecidedLastCommit to the application. The test ensures that the
 // DecidedLastCommit properly reflects which validators signed the preceding

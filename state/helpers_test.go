@@ -204,11 +204,14 @@ func randomGenesisDoc() *types.GenesisDoc {
 type testApp struct {
 	abci.BaseApplication
 
-	CommitVotes      []abci.VoteInfo
-	Misbehavior      []abci.Misbehavior
-	LastTime         time.Time
-	ValidatorUpdates []abci.ValidatorUpdate
-	AppHash          []byte
+	CommitVotes           []abci.VoteInfo
+	Misbehavior           []abci.Misbehavior
+	LastTime              time.Time
+	ValidatorUpdates      []abci.ValidatorUpdate
+	AppHash               []byte
+	LastBlockHash         []byte
+	LastBlockPartSetTotal int64
+	LastBlockPartSetHash  []byte
 }
 
 var _ abci.Application = (*testApp)(nil)
@@ -217,6 +220,9 @@ func (app *testApp) FinalizeBlock(_ context.Context, req *abci.FinalizeBlockRequ
 	app.CommitVotes = req.DecidedLastCommit.Votes
 	app.Misbehavior = req.Misbehavior
 	app.LastTime = req.Time
+	app.LastBlockHash = req.LastBlockHash
+	app.LastBlockPartSetTotal = req.LastBlockPartSetTotal
+	app.LastBlockPartSetHash = req.LastBlockPartSetHash
 	txResults := make([]*abci.ExecTxResult, len(req.Txs))
 	for idx := range req.Txs {
 		txResults[idx] = &abci.ExecTxResult{
