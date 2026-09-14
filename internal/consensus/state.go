@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	injmetrics "github.com/InjectiveLabs/metrics/v2"
@@ -967,6 +968,21 @@ func (cs *State) handleMsg(mi msgInfo) {
 	}
 
 	if err != nil {
+		// no graceful way to match this error earlier in this codebase
+		// we need to skip "existing vote" reports since they are false positives
+		if strings.Contains(err.Error(), "error adding vote") {
+			cs.Logger.Debug(
+				"Failed to process message",
+				"height", cs.Height,
+				"round", cs.Round,
+				"peer", peerID,
+				"msg_type", fmt.Sprintf("%T", msg),
+				"err", err,
+			)
+
+			return
+		}
+
 		cs.Logger.Info(
 			"Failed to process message",
 			"height", cs.Height,
