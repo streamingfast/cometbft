@@ -62,7 +62,7 @@ Please see [SECURITY.md](./SECURITY.md).
 
 | CometBFT version | Requirement | Version        | Tested with  |
 |------------------|-------------|----------------|--------------|
-| v1.x-inj         | Go version  | 1.26 or higher | up to 1.26.2 |
+| v1.x-inj         | Go version  | 1.27 or higher | up to 1.27.2 |
 
 ### Install
 

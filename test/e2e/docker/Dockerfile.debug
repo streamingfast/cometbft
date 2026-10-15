@@ -3,6 +3,9 @@
 # instead of spending time compiling them.
 FROM cometbft/cometbft-db-testing:v1.0.2
 
+# The base image ships an older Go; fetch the toolchain required by go.mod.
+ENV GOTOOLCHAIN=go1.27.2
+
 RUN apt-get -qq update -y && apt-get -qq upgrade -y >/dev/null
 RUN apt-get -qq install -y zsh vim >/dev/null
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
