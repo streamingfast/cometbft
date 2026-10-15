@@ -3,23 +3,25 @@ package mempool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"fmt"
+	"golang.org/x/sync/semaphore"
 
 	protomem "github.com/cometbft/cometbft/api/cometbft/mempool/v2"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/types"
-	"golang.org/x/sync/semaphore"
 )
 
-// Reactor handles mempool tx broadcasting amongst peers.
-// It maintains a map from peer ID to counter, to prevent gossiping txs to the
-// peers you received it from.
+// MempoolInterfaceReactor handles mempool tx broadcasting amongst peers for
+// the proxy mempool. It keeps one broadcast channel per peer and doesn't
+// gossip a tx back to the peers it was received from.
+//
+//nolint:revive // named after NewMempoolInterfaceReactor, next to the flood Reactor
 type MempoolInterfaceReactor struct {
 	p2p.BaseReactor
 	config  *cfg.MempoolConfig
@@ -62,7 +64,7 @@ func NewMempoolInterfaceReactor(config *cfg.MempoolConfig, mempool Mempool, txSt
 }
 
 // InitPeer implements Reactor by creating a state for the peer.
-func (memR *MempoolInterfaceReactor) InitPeer(peer p2p.Peer) p2p.Peer {
+func (*MempoolInterfaceReactor) InitPeer(peer p2p.Peer) p2p.Peer {
 	return peer
 }
 
@@ -169,7 +171,7 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 // already loaded it from peerBroadcastChannels and a send on a closed channel
 // panics. broadcastTxPeerRoutine exits on peer.Quit() and the unreferenced
 // channel is garbage collected.
-func (memR *MempoolInterfaceReactor) RemovePeer(peer p2p.Peer, _ interface{}) {
+func (memR *MempoolInterfaceReactor) RemovePeer(peer p2p.Peer, _ any) {
 	memR.peerBroadcastChannels.Delete(peer.ID())
 }
 
@@ -301,7 +303,7 @@ func (memR *MempoolInterfaceReactor) broadcastTxRoutine() {
 		select {
 		case tx := <-txChan:
 			if tx != nil {
-				memR.peerBroadcastChannels.Range(func(key, value interface{}) bool {
+				memR.peerBroadcastChannels.Range(func(key, value any) bool {
 					peerID := key.(p2p.ID)
 					ch := value.(chan MempoolTx)
 

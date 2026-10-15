@@ -7,8 +7,10 @@ type ProxyMempool struct {
 	TxBroadcastStream
 }
 
-var _ Mempool = (*ProxyMempool)(nil)
-var _ TxBroadcastStream = (*ProxyMempool)(nil)
+var (
+	_ Mempool           = (*ProxyMempool)(nil)
+	_ TxBroadcastStream = (*ProxyMempool)(nil)
+)
 
 func (m *ProxyMempool) SetMempool(mp Mempool) {
 	m.Mempool = mp

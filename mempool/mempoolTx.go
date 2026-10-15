@@ -9,10 +9,10 @@ import (
 	"github.com/cometbft/cometbft/types"
 )
 
-// mempoolTx is an entry in the mempool.
+// Ensure mempoolTx implements MempoolTx.
 var _ MempoolTx = (*mempoolTx)(nil)
 
-// mempoolTx is an entry in the mempool
+// mempoolTx is an entry in the mempool.
 type mempoolTx struct {
 	height    int64    // height that this tx had been validated in
 	gasWanted int64    // amount of gas this tx states it will require
@@ -26,7 +26,7 @@ type mempoolTx struct {
 	senders sync.Map
 }
 
-// NewMempoolTx creates a new mempoolTx using the builder pattern
+// NewMempoolTx creates a new mempoolTx using the builder pattern.
 func NewMempoolTx(tx types.Tx) MempoolTx {
 	return NewMempoolTxBuilder().
 		WithTx(tx).
@@ -74,7 +74,9 @@ func (memTx *mempoolTx) Senders() []p2p.ID {
 	return senders
 }
 
-// MempoolTxBuilder is a builder for creating mempoolTx instances
+// MempoolTxBuilder is a builder for creating mempoolTx instances.
+//
+//nolint:revive // exported name is part of the API that injective-core uses
 type MempoolTxBuilder struct {
 	height    int64
 	gasWanted int64
@@ -82,37 +84,38 @@ type MempoolTxBuilder struct {
 	senders   []p2p.ID
 }
 
-// NewMempoolTxBuilder creates a new builder for mempoolTx
+// NewMempoolTxBuilder creates a new builder for mempoolTx.
 func NewMempoolTxBuilder() *MempoolTxBuilder {
 	return &MempoolTxBuilder{
 		senders: make([]p2p.ID, 0),
 	}
 }
 
-// WithHeight sets the height for the mempoolTx
+// WithHeight sets the height for the mempoolTx.
 func (b *MempoolTxBuilder) WithHeight(height int64) *MempoolTxBuilder {
 	b.height = height
 	return b
 }
 
-// WithGasWanted sets the gas wanted for the mempoolTx
+// WithGasWanted sets the gas wanted for the mempoolTx.
 func (b *MempoolTxBuilder) WithGasWanted(gasWanted int64) *MempoolTxBuilder {
 	b.gasWanted = gasWanted
 	return b
 }
 
-// WithTx sets the transaction for the mempoolTx
+// WithTx sets the transaction for the mempoolTx.
 func (b *MempoolTxBuilder) WithTx(tx types.Tx) *MempoolTxBuilder {
 	b.tx = tx
 	return b
 }
 
+// WithSender adds a peer to the senders of the mempoolTx.
 func (b *MempoolTxBuilder) WithSender(sender p2p.ID) *MempoolTxBuilder {
 	b.senders = append(b.senders, sender)
 	return b
 }
 
-// Build creates the final mempoolTx instance
+// Build creates the final mempoolTx instance.
 func (b *MempoolTxBuilder) Build() MempoolTx {
 	memTx := &mempoolTx{
 		height:    b.height,

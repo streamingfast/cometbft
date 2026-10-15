@@ -182,8 +182,10 @@ type Iterator interface {
 	WaitNextCh() <-chan Entry
 }
 
-// MempoolTx defines the interface for a transaction in the mempool
-// It provides methods to access transaction properties and sender information
+// MempoolTx defines the interface for a transaction in the mempool.
+// It provides methods to access transaction properties and sender information.
+//
+//nolint:revive // exported name is part of the API that injective-core implements
 type MempoolTx interface {
 	Height() int64
 	GasWanted() int64

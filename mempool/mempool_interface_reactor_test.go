@@ -72,7 +72,6 @@ func newMempoolInterfaceWithAppAndConfig(cc proxy.ClientCreator) (*CListMempool,
 	conf := test.ResetTestRoot("mempool_interface_test")
 
 	appConnMem, _ := cc.NewABCIMempoolClient()
-	appConnMem.SetResponseCallback(func(r1 *abci.Request, r2 *abci.Response) {})
 	appConnMem.SetLogger(log.TestingLogger().With("module", "abci-client"))
 	if err := appConnMem.Start(); err != nil {
 		panic(err)
@@ -120,13 +119,11 @@ func makeAndConnectMempoolInterfaceReactors(
 
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			for switches[idx].Peers().Size() < (n - 1) {
+		wg.Go(func() {
+			for switches[i].Peers().Size() < (n - 1) {
 				time.Sleep(100 * time.Millisecond)
 			}
-		}(i)
+		})
 	}
 
 	waitTimeout := time.After(15 * time.Second)
@@ -138,13 +135,12 @@ func makeAndConnectMempoolInterfaceReactors(
 
 	select {
 	case <-waitTimeout:
-		t.Fatalf("Timed out waiting for %d peers to connect (got %d for switch 0, %d for switch 1 if N=2)", n-1, switches[0].Peers().Size(), (func() int {
+		t.Fatalf("Timed out waiting for %d peers to connect (got %d for switch 0, %d for switch 1 if N=2)", n-1, switches[0].Peers().Size(), func() int {
 			if n > 1 {
 				return switches[1].Peers().Size()
-			} else {
-				return 0
 			}
-		}()))
+			return 0
+		}())
 	case <-done:
 	}
 
@@ -239,11 +235,9 @@ func waitForTxsOnMempoolsInterface(t *testing.T, txs types.Txs, reactors []*Memp
 	t.Helper()
 	wg := new(sync.WaitGroup)
 	for i, reactor := range reactors {
-		wg.Add(1)
-		go func(r *MempoolInterfaceReactor, reactorIndex int) {
-			defer wg.Done()
-			checkTxsInOrderOnMempoolInterface(t, txs, r, reactorIndex, len(reactors))
-		}(reactor, i)
+		wg.Go(func() {
+			checkTxsInOrderOnMempoolInterface(t, txs, reactor, i, len(reactors))
+		})
 	}
 
 	done := make(chan struct{})
@@ -266,9 +260,9 @@ func waitForTxsOnMempoolsInterface(t *testing.T, txs types.Txs, reactors []*Memp
 func TestMempoolInterfaceReactor_BroadcastTxsMessage(t *testing.T) {
 	config := cfg.TestConfig()
 	config.Mempool.Broadcast = true
-	const N = 2
+	const n = 2
 
-	reactors, switches, txStreams, _ := makeAndConnectMempoolInterfaceReactors(t, config, N) // mempools slice is not directly used here
+	reactors, switches, txStreams, _ := makeAndConnectMempoolInterfaceReactors(t, config, n) // mempools slice is not directly used here
 
 	defer func() {
 		for _, sw := range switches {
@@ -316,9 +310,7 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			select {
 			case <-done:
@@ -326,7 +318,7 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 			case txStream.txChan <- memTx:
 			}
 		}
-	}()
+	})
 
 	for i := 0; i < 2000; i++ {
 		peer := mock.NewPeer(nil)
