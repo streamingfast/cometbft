@@ -4,10 +4,12 @@
 repos:
   # golangci-lint
   - repo: https://github.com/golangci/golangci-lint
-    rev: v1.60.3
+    rev: v2.14.0
     hooks:
       - id: golangci-lint-full
-        args: [--timeout, 10m] # for CI
+        # Only report issues introduced since the merge base with v1.x-inj, so
+        # pre-existing findings in fork code don't block unrelated changes.
+        args: [--timeout, 10m, --new-from-merge-base=origin/v1.x-inj] # for CI
 
   # gofumpt (does not have .pre-commmit-hooks.yaml)
   - repo: local
@@ -15,7 +17,7 @@ repos:
       - id: gofumpt
         name: "gofumpt"
         additional_dependencies:
-          - mvdan.cc/gofumpt@v0.7.0
+          - mvdan.cc/gofumpt@v0.12.0
         entry: "gofumpt"
         language: golang
         args: [-w, .]
