@@ -1,182 +1,235 @@
+version: "2"
 run:
   tests: true
-  timeout: 10m
-
 linters:
-  enable-all: true
-  disable:
-    - containedctx
-    - contextcheck
-    - cyclop
-    - dupword
-    - err113
-    - errname
-    - errorlint
-    - execinquery
-    - exhaustive
-    - exhaustruct
-    - forbidigo
-    - forcetypeassert
-    - funlen
-    - gochecknoglobals
-    - gochecknoinits
-    - gocognit
-    - gocyclo
-    - godox
-    - gomnd
-    - gomoddirectives
-    - gosec
-    - interfacebloat
-    - intrange
-    - ireturn
-    - lll
-    - maintidx
-    - mnd
-    - nestif
-    - nilnil
-    - nlreturn
-    - nonamedreturns
-    - predeclared
-    - tagliatelle
-    - testifylint
-    - varnamelen
-    - wrapcheck
-    - wsl
-
+  # Same linter set as golangci-lint v1.60.3 with the previous `enable-all`
+  # config, mapped to v2: gosimple and stylecheck are part of staticcheck,
+  # tenv is replaced by usetesting, gomodguard by gomodguard_v2, exportloopref
+  # is obsolete since Go 1.22, and the formatters live under `formatters`.
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - copyloopvar
+    - decorder
+    - depguard
+    - dogsled
+    - dupl
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - fatcontext
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godot
+    - goheader
+    - gomodguard_v2
+    - goprintffuncname
+    - gosmopolitan
+    - govet
+    - grouper
+    - importas
+    - inamedparam
+    - ineffassign
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - promlinter
+    - protogetter
+    - reassign
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagalign
+    - testableexamples
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - zerologlint
+  settings:
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+            - '!$test'
+          allow:
+            - $gostd
+            - github.com/BurntSushi/toml
+            - github.com/Masterminds/semver/v3
+            - github.com/cometbft
+            - github.com/cosmos
+            - github.com/dgraph-io/badger/v4
+            - github.com/go-git/go-git/v5
+            - github.com/go-kit
+            - github.com/go-logfmt/logfmt
+            - github.com/google
+            - github.com/gorilla/websocket
+            - github.com/hashicorp/golang-lru/v2
+            - github.com/lib/pq
+            - github.com/libp2p/go-buffer-pool
+            - github.com/minio/highwayhash
+            - github.com/oasisprotocol/curve25519-voi
+            - github.com/pkg/errors
+            - github.com/prometheus
+            - github.com/rcrowley/go-metrics
+            - github.com/rs/cors
+            - github.com/snikch/goodman
+            - github.com/spf13
+            - github.com/stretchr/testify/require
+            - github.com/syndtr/goleveldb
+            - github.com/mitchellh/mapstructure
+            - github.com/decred/dcrd/dcrec/secp256k1/v4
+            - golang.org/x/sync
+        test:
+          files:
+            - $test
+          allow:
+            - $gostd
+            - github.com/adlio/schema
+            - github.com/btcsuite/btcd
+            - github.com/cometbft
+            - github.com/cosmos
+            - github.com/dgraph-io/badger/v4
+            - github.com/fortytw2/leaktest
+            - github.com/go-kit/log
+            - github.com/google/uuid
+            - github.com/gorilla/websocket
+            - github.com/lib/pq
+            - github.com/oasisprotocol/curve25519-voi/primitives/merlin
+            - github.com/ory/dockertest
+            - github.com/pkg/errors
+            - github.com/prometheus/client_golang/prometheus
+            - github.com/prometheus/client_golang/prometheus/promhttp
+            - github.com/spf13
+            - github.com/stretchr/testify
+            - github.com/decred/dcrd/dcrec/secp256k1/v4
+    dogsled:
+      max-blank-identifiers: 3
+    misspell:
+      locale: US
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: comment-spacings
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+        - name: argument-limit
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+        - name: deep-exit
+          disabled: true
+        - name: file-header
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: function-result-limit
+          disabled: true
+        - name: line-length-limit
+          disabled: true
+        - name: flag-parameter
+          disabled: true
+        - name: add-constant
+          disabled: true
+        - name: empty-lines
+          disabled: true
+        - name: import-shadowing
+          disabled: true
+        - name: modifies-value-receiver
+          disabled: true
+        - name: confusing-naming
+          disabled: true
+        - name: defer
+          disabled: true
+        - name: unchecked-type-assertion
+          disabled: true
+        - name: unhandled-error
+          arguments:
+            - fmt.Printf
+            - fmt.Print
+            - fmt.Println
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gocritic
+          - goimport
+          - gosec
+          - noctx
+          - paralleltest
+          - testpackage
+          - tparallel
+        path: _test\.go
+      - linters:
+          - govet
+          - staticcheck
+        path: \.pb\.go
+      - linters:
+          - goconst
+        path: (.+)_test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gocritic
-        - gofmt
-        - goimport
-        - gosec
-        - noctx
-        - paralleltest
-        - testpackage
-        - tparallel
-    - path: \.pb\.go
-      linters:
-        - gofmt
-        - goimports
-        - govet
-        - stylecheck
-  max-same-issues: 10000
   max-issues-per-linter: 10000
-linters-settings:
-  dogsled:
-    max-blank-identifiers: 3
-  goconst:
-    ignore-tests: true
-  misspell:
-    locale: US
-  gci:
-    sections:
-      - standard # Standard section: captures all standard packages.
-      - default # Default section: contains all imports that could not be matched to another section type.
-      - blank # blank imports
-      - dot # dot imports
-      - prefix(github.com/cometbft/cometbft, github.com/cometbft/cometbft-db)
-    custom-order: true
-  depguard:
-    rules:
-      main:
-        files:
-          - $all
-          - "!$test"
-        allow:
-          - $gostd
-          - github.com/BurntSushi/toml
-          - github.com/Masterminds/semver/v3
-          - github.com/cometbft
-          - github.com/cosmos
-          - github.com/dgraph-io/badger/v4
-          - github.com/go-git/go-git/v5
-          - github.com/go-kit
-          - github.com/go-logfmt/logfmt
-          - github.com/google
-          - github.com/gorilla/websocket
-          - github.com/hashicorp/golang-lru/v2
-          - github.com/lib/pq
-          - github.com/libp2p/go-buffer-pool
-          - github.com/minio/highwayhash
-          - github.com/oasisprotocol/curve25519-voi
-          - github.com/pkg/errors
-          - github.com/prometheus
-          - github.com/rcrowley/go-metrics
-          - github.com/rs/cors
-          - github.com/snikch/goodman
-          - github.com/spf13
-          - github.com/stretchr/testify/require
-          - github.com/syndtr/goleveldb
-          - github.com/mitchellh/mapstructure
-          - github.com/decred/dcrd/dcrec/secp256k1/v4
-      test:
-        files:
-          - "$test"
-        allow:
-          - $gostd
-          - github.com/adlio/schema
-          - github.com/btcsuite/btcd
-          - github.com/cometbft
-          - github.com/cosmos
-          - github.com/dgraph-io/badger/v4
-          - github.com/fortytw2/leaktest
-          - github.com/go-kit/log
-          - github.com/google/uuid
-          - github.com/gorilla/websocket
-          - github.com/lib/pq
-          - github.com/oasisprotocol/curve25519-voi/primitives/merlin
-          - github.com/ory/dockertest
-          - github.com/pkg/errors
-          - github.com/prometheus/client_golang/prometheus
-          - github.com/prometheus/client_golang/prometheus/promhttp
-          - github.com/spf13
-          - github.com/stretchr/testify
-          - github.com/decred/dcrd/dcrec/secp256k1/v4
-
-  revive:
-    enable-all-rules: true
-    rules:
-      - name: comment-spacings # temporarily disabled
-        disabled: true
-      - name: max-public-structs
-        disabled: true
-      - name: cognitive-complexity
-        disabled: true
-      - name: argument-limit
-        disabled: true
-      - name: cyclomatic
-        disabled: true
-      - name: deep-exit
-        disabled: true
-      - name: file-header
-        disabled: true
-      - name: function-length
-        disabled: true
-      - name: function-result-limit
-        disabled: true
-      - name: line-length-limit
-        disabled: true
-      - name: flag-parameter
-        disabled: true
-      - name: add-constant
-        disabled: true
-      - name: empty-lines
-        disabled: true
-      - name: import-shadowing
-        disabled: true
-      - name: modifies-value-receiver
-        disabled: true
-      - name: confusing-naming
-        disabled: true
-      - name: defer
-        disabled: true
-      - name: unchecked-type-assertion
-        disabled: true
-      - name: unhandled-error
-        disabled: true
-        arguments:
-          - "fmt.Printf"
-          - "fmt.Print"
-          - "fmt.Println"
+  max-same-issues: 10000
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - blank
+        - dot
+        - prefix(github.com/cometbft/cometbft, github.com/cometbft/cometbft-db)
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - _test\.go
+      - \.pb\.go

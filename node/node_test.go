@@ -40,7 +40,7 @@ import (
 )
 
 func TestNodeStartStop(t *testing.T) {
-	config := test.ResetTestRoot("node_node_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_node_test"))
 	defer os.RemoveAll(config.RootDir)
 
 	// create & start node
@@ -102,7 +102,7 @@ func TestSplitAndTrimEmpty(t *testing.T) {
 }
 
 func TestCompanionInitialHeightSetup(t *testing.T) {
-	config := test.ResetTestRoot("companion_initial_height")
+	config := withFreeAddrs(t, test.ResetTestRoot("companion_initial_height"))
 	defer os.RemoveAll(config.RootDir)
 	config.Storage.Pruning.DataCompanion.Enabled = true
 	config.Storage.Pruning.DataCompanion.InitialBlockRetainHeight = 1
@@ -116,7 +116,7 @@ func TestCompanionInitialHeightSetup(t *testing.T) {
 }
 
 func TestNodeDelayedStart(t *testing.T) {
-	config := test.ResetTestRoot("node_delayed_start_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_delayed_start_test"))
 	defer os.RemoveAll(config.RootDir)
 	now := cmttime.Now()
 
@@ -135,7 +135,7 @@ func TestNodeDelayedStart(t *testing.T) {
 }
 
 func TestNodeSetAppVersion(t *testing.T) {
-	config := test.ResetTestRoot("node_app_version_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_app_version_test"))
 	defer os.RemoveAll(config.RootDir)
 
 	// create & start node
@@ -155,7 +155,7 @@ func TestNodeSetAppVersion(t *testing.T) {
 }
 
 func TestPprofServer(t *testing.T) {
-	config := test.ResetTestRoot("node_pprof_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_pprof_test"))
 	defer os.RemoveAll(config.RootDir)
 	config.RPC.PprofListenAddress = testFreeAddr(t)
 
@@ -180,7 +180,7 @@ func TestPprofServer(t *testing.T) {
 func TestNodeSetPrivValTCP(t *testing.T) {
 	addr := "tcp://" + testFreeAddr(t)
 
-	config := test.ResetTestRoot("node_priv_val_tcp_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_priv_val_tcp_test"))
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = addr
 
@@ -214,7 +214,7 @@ func TestNodeSetPrivValTCP(t *testing.T) {
 func TestPrivValidatorListenAddrNoProtocol(t *testing.T) {
 	addrNoPrefix := testFreeAddr(t)
 
-	config := test.ResetTestRoot("node_priv_val_tcp_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_priv_val_tcp_test"))
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = addrNoPrefix
 
@@ -226,7 +226,7 @@ func TestNodeSetPrivValIPC(t *testing.T) {
 	tmpfile := "/tmp/kms." + cmtrand.Str(6) + ".sock"
 	defer os.Remove(tmpfile) // clean up
 
-	config := test.ResetTestRoot("node_priv_val_tcp_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_priv_val_tcp_test"))
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = "unix://" + tmpfile
 
@@ -257,7 +257,7 @@ func TestNodeSetPrivValIPC(t *testing.T) {
 func TestNodeSetFilePrivVal(t *testing.T) {
 	for _, keyType := range kt.ListSupportedKeyTypes() {
 		t.Run(keyType, func(t *testing.T) {
-			config := test.ResetTestRootWithChainIDNoOverwritePrivval("node_priv_val_file_test_"+keyType, "test_chain_"+keyType)
+			config := withFreeAddrs(t, test.ResetTestRootWithChainIDNoOverwritePrivval("node_priv_val_file_test_"+keyType, "test_chain_"+keyType))
 			defer os.RemoveAll(config.RootDir)
 
 			keyGenF := func() (crypto.PrivKey, error) {
@@ -271,6 +271,17 @@ func TestNodeSetFilePrivVal(t *testing.T) {
 }
 
 // testFreeAddr claims a free port so we don't block on listener being ready.
+// withFreeAddrs gives the node free RPC and P2P listen addresses. The fixed
+// test ports (36657/36656) are inside Linux's ephemeral port range, so a test
+// in another package running concurrently can hold them and every node test
+// here then fails with "address already in use".
+func withFreeAddrs(t *testing.T, config *cfg.Config) *cfg.Config {
+	t.Helper()
+	config.RPC.ListenAddress = "tcp://" + testFreeAddr(t)
+	config.P2P.ListenAddress = "tcp://" + testFreeAddr(t)
+	return config
+}
+
 func testFreeAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -286,7 +297,7 @@ func TestCreateProposalBlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := test.ResetTestRoot("node_create_proposal")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_create_proposal"))
 	defer os.RemoveAll(config.RootDir)
 	app := kvstore.NewInMemoryApplication()
 	cc := proxy.NewLocalClientCreator(app)
@@ -396,7 +407,7 @@ func TestMaxProposalBlockSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := test.ResetTestRoot("node_create_proposal")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_create_proposal"))
 	defer os.RemoveAll(config.RootDir)
 	app := kvstore.NewInMemoryApplication()
 	cc := proxy.NewLocalClientCreator(app)
@@ -469,7 +480,7 @@ func TestMaxProposalBlockSize(t *testing.T) {
 }
 
 func TestNodeNewNodeCustomReactors(t *testing.T) {
-	config := test.ResetTestRoot("node_new_node_custom_reactors_test")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_new_node_custom_reactors_test"))
 	defer os.RemoveAll(config.RootDir)
 
 	cr := p2pmock.NewReactor()
@@ -522,7 +533,7 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 // Simple test to confirm that an existing genesis file will be deleted from the DB
 // TODO Confirm that the deletion of a very big file does not crash the machine.
 func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
-	config := test.ResetTestRoot("node_new_node_delete_genesis_from_db")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_new_node_delete_genesis_from_db"))
 	defer os.RemoveAll(config.RootDir)
 	// Use goleveldb so we can reuse the same db for the second NewNode()
 	config.DBBackend = string(dbm.PebbleDBBackend)
@@ -577,7 +588,7 @@ func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
 }
 
 func TestNodeNewNodeGenesisHashMismatch(t *testing.T) {
-	config := test.ResetTestRoot("node_new_node_genesis_hash")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_new_node_genesis_hash"))
 	defer os.RemoveAll(config.RootDir)
 
 	// Use goleveldb so we can reuse the same db for the second NewNode()
@@ -650,7 +661,7 @@ func TestNodeNewNodeGenesisHashMismatch(t *testing.T) {
 }
 
 func TestNodeGenesisHashFlagMatch(t *testing.T) {
-	config := test.ResetTestRoot("node_new_node_genesis_hash_flag_match")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_new_node_genesis_hash_flag_match"))
 	defer os.RemoveAll(config.RootDir)
 
 	config.DBBackend = string(dbm.PebbleDBBackend)
@@ -683,7 +694,7 @@ func TestNodeGenesisHashFlagMatch(t *testing.T) {
 }
 
 func TestNodeGenesisHashFlagMismatch(t *testing.T) {
-	config := test.ResetTestRoot("node_new_node_genesis_hash_flag_mismatch")
+	config := withFreeAddrs(t, test.ResetTestRoot("node_new_node_genesis_hash_flag_mismatch"))
 	defer os.RemoveAll(config.RootDir)
 
 	// Use goleveldb so we can reuse the same db for the second NewNode()

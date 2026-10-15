@@ -216,7 +216,7 @@ var emptyBytes = []byte{
 
 func TestNilHeaderHashDoesntCrash(t *testing.T) {
 	assert.Equal(t, nilBytes, []byte((*Header)(nil).Hash()))
-	assert.Equal(t, nilBytes, []byte((new(Header)).Hash()))
+	assert.Equal(t, nilBytes, []byte(new(Header).Hash()))
 }
 
 func TestNilDataHashDoesntCrash(t *testing.T) {

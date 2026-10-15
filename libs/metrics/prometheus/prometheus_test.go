@@ -25,7 +25,6 @@ package prometheus
 import (
 	"io"
 	"math"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -104,6 +103,9 @@ func TestGauge(t *testing.T) {
 
 	value := func() []float64 {
 		matches := re.FindStringSubmatch(scrape())
+		if len(matches) < 2 {
+			return nil
+		}
 		f, _ := strconv.ParseFloat(matches[1], 64)
 		return []float64{f}
 	}
@@ -153,6 +155,9 @@ func TestSummary(t *testing.T) {
 	}
 }
 
+// histogramSeed seeds the normally distributed samples in TestHistogram.
+const histogramSeed = 1
+
 func TestHistogram(t *testing.T) {
 	// Prometheus reports histograms as a count of observations that fell into
 	// each predefined bucket, with the bucket value representing a global upper
@@ -196,7 +201,10 @@ func TestHistogram(t *testing.T) {
 	// Can't TestHistogram, because Prometheus Histograms don't dynamically
 	// compute quantiles. Instead, they fill up buckets. So, let's populate the
 	// histogram kind of manually.
-	teststat.PopulateNormalHistogram(histogram, rand.Int())
+	// A fixed seed keeps the bucket counts deterministic. With a random seed,
+	// sampling noise in the sparse tail buckets occasionally exceeded the 50%
+	// tolerance below.
+	teststat.PopulateNormalHistogram(histogram, histogramSeed)
 
 	// Then, we use ExpectedObservationsLessThan to validate.
 	for _, line := range strings.Split(scrape(), "\n") {

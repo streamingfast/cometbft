@@ -1,12 +1,13 @@
 module github.com/cometbft/cometbft
 
-go 1.26.2
+go 1.27.2
 
 require (
 	github.com/BurntSushi/toml v1.4.0
+	github.com/InjectiveLabs/metrics/v2 v2.0.0-beta.8
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/adlio/schema v1.3.6
 	github.com/btcsuite/btcd/btcutil v1.1.6
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cometbft/cometbft-db v1.0.4
 	github.com/cometbft/cometbft-load-test v0.3.0
 	github.com/cometbft/cometbft/api v1.0.0
@@ -14,13 +15,18 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/dgraph-io/badger/v4 v4.6.0
 	github.com/fortytw2/leaktest v1.3.0
+	github.com/go-git/go-git/v5 v5.14.0
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.6.0
-	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/goccmack/goutil v1.2.3
 	github.com/google/orderedcode v0.0.1
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/lib/pq v1.10.9
 	github.com/minio/highwayhash v1.0.3
+	github.com/mitchellh/mapstructure v1.5.0
+	github.com/oasisprotocol/curve25519-voi v0.0.0-20220708102147-0a8a51822cae
 	github.com/ory/dockertest v3.3.5+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.21.1
@@ -33,26 +39,14 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.41.0
-	golang.org/x/net v0.43.0
-	google.golang.org/grpc v1.75.0
-)
-
-require github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
-
-require (
-	github.com/InjectiveLabs/metrics/v2 v2.0.0-beta.8
-	github.com/Masterminds/semver/v3 v3.3.1
-	github.com/go-git/go-git/v5 v5.14.0
-	github.com/goccmack/goutil v1.2.3
-	github.com/google/uuid v1.6.0
-	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/mitchellh/mapstructure v1.5.0
-	github.com/oasisprotocol/curve25519-voi v0.0.0-20220708102147-0a8a51822cae
 	github.com/supranational/blst v0.3.14
+	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
+	golang.org/x/crypto v0.41.0
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
+	golang.org/x/net v0.43.0
 	golang.org/x/sync v0.16.0
 	gonum.org/v1/gonum v0.16.0
+	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.8
 )
 
@@ -64,6 +58,7 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/ProtonMail/go-crypto v1.1.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.0 // indirect
@@ -91,6 +86,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
