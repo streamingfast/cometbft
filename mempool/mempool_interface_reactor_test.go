@@ -297,9 +297,9 @@ func TestMempoolInterfaceReactor_BroadcastTxsMessage(t *testing.T) {
 }
 
 // TestMempoolInterfaceReactor_RemovePeerDuringBroadcast removes peers while
-// broadcastTxRoutine fans transactions out to their channels. RemovePeer used
+// broadcastTxRoutine fans transactions out to their queues. RemovePeer used
 // to close the peer channel, which panicked when the broadcaster had already
-// loaded it from peerBroadcastChannels.
+// loaded it from the peer map.
 func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 	config := cfg.TestConfig()
 	config.Mempool.Broadcast = true
@@ -326,7 +326,7 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 
 	for i := 0; i < 2000; i++ {
 		peer := mock.NewPeer(nil)
-		reactor.peerBroadcastChannels.Store(peer.ID(), make(chan MempoolTx, 1))
+		reactor.peerQueues.Store(peer.ID(), newPeerTxQueue(peer, 1))
 		reactor.RemovePeer(peer, nil)
 	}
 
@@ -334,7 +334,7 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 	wg.Wait()
 
 	remaining := 0
-	reactor.peerBroadcastChannels.Range(func(_, _ any) bool {
+	reactor.peerQueues.Range(func(_, _ any) bool {
 		remaining++
 		return true
 	})
@@ -345,6 +345,7 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 // channel. Its first failSends sends fail, as with a full send queue.
 type recordingPeer struct {
 	*mock.Peer
+	id p2p.ID
 
 	mtx       sync.Mutex
 	kv        map[string]any
@@ -354,8 +355,11 @@ type recordingPeer struct {
 }
 
 func newRecordingPeer() *recordingPeer {
-	return &recordingPeer{Peer: mock.NewPeer(nil), kv: make(map[string]any)}
+	p := mock.NewPeer(nil)
+	return &recordingPeer{Peer: p, id: p.ID(), kv: make(map[string]any)}
 }
+
+func (p *recordingPeer) ID() p2p.ID { return p.id }
 
 func (p *recordingPeer) Get(key string) any {
 	p.mtx.Lock()
@@ -405,10 +409,14 @@ func newTestMempoolInterfaceReactor(
 	stream TxBroadcastStream,
 	waitSync bool,
 	logger log.Logger,
+	opts ...func(*cfg.MempoolConfig),
 ) (*MempoolInterfaceReactor, *CListMempool) {
 	t.Helper()
 	config := cfg.TestConfig()
 	config.Mempool.Broadcast = true
+	for _, opt := range opts {
+		opt(config.Mempool)
+	}
 
 	mp, cleanup := newMempoolInterfaceWithAppAndConfig(proxy.NewLocalClientCreator(kvstore.NewInMemoryApplication()))
 	t.Cleanup(cleanup)
@@ -427,8 +435,8 @@ func addPeer(t *testing.T, reactor *MempoolInterfaceReactor, peer p2p.Peer) {
 	t.Helper()
 	reactor.AddPeer(peer)
 	require.Eventually(t, func() bool {
-		_, ok := reactor.peerBroadcastChannels.Load(peer.ID())
-		return ok
+		q, ok := reactor.peerQueues.Load(peer.ID())
+		return ok && q.(*peerTxQueue).peer == peer
 	}, 5*time.Second, time.Millisecond)
 }
 
@@ -564,4 +572,66 @@ func (b *syncBuffer) String() string {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 	return b.buf.String()
+}
+
+// TestMempoolInterfaceReactor_QueueOverflow checks that a peer whose queue
+// overflowed while it was lagging still gets every tx in the mempool, once,
+// instead of losing the txs that didn't fit in the queue.
+func TestMempoolInterfaceReactor_QueueOverflow(t *testing.T) {
+	const queueSize = 3
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger(),
+		func(c *cfg.MempoolConfig) { c.Size = queueSize })
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+
+	// The peer is too far behind for the streamed txs, so the peer routine
+	// blocks on the first one while the queue overflows. As with the proxy
+	// mempool, the stream only carries txs added to the mempool.
+	var txs types.Txs
+	for i := 0; i < 4*queueSize+1; i++ {
+		tx := types.Tx(fmt.Sprintf("tx%d=%d", i, i))
+		txs = append(txs, tx)
+		checkTxs(t, mp, "", tx)
+		stream.sendTx(NewMempoolTxBuilder().WithHeight(10).WithTx(tx).Build())
+	}
+	// Let broadcastTxRoutine fan all streamed txs out to the full queue.
+	require.Eventually(t, func() bool { return len(stream.txChan) == 0 }, 5*time.Second, time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	require.Empty(t, peer.sentTxs())
+
+	peer.setHeight(9)
+	require.Eventually(t, func() bool { return len(peer.sentTxs()) >= len(txs) }, 5*time.Second, 10*time.Millisecond,
+		"txs were lost")
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.ElementsMatch(t, txs, peer.sentTxs(), "each tx must be sent once")
+}
+
+// TestMempoolInterfaceReactor_ReconnectReplacesStaleQueue checks that a peer
+// reconnecting while the queue of its previous connection is still stored
+// replaces it and gets txs. A stale entry used to keep the new peer from
+// getting a broadcast routine.
+func TestMempoolInterfaceReactor_ReconnectReplacesStaleQueue(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	// The AddPeer routine of the old connection stored its queue after
+	// RemovePeer ran, and hasn't exited yet.
+	oldPeer := newRecordingPeer()
+	require.NoError(t, oldPeer.Stop())
+	reactor.peerQueues.Store(oldPeer.ID(), newPeerTxQueue(oldPeer, 10))
+
+	newPeer := newRecordingPeer()
+	newPeer.id = oldPeer.ID()
+	newPeer.setHeight(1)
+	addPeer(t, reactor, newPeer)
+
+	// A late RemovePeer for the old connection keeps the new queue.
+	reactor.RemovePeer(oldPeer, nil)
+
+	tx := types.Tx("reconnect=1")
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(tx).Build())
+	require.Equal(t, types.Txs{tx}, newPeer.waitSent(t, 1))
 }

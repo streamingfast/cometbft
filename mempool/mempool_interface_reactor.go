@@ -18,7 +18,7 @@ import (
 )
 
 // MempoolInterfaceReactor handles mempool tx broadcasting amongst peers for
-// the proxy mempool. It keeps one broadcast channel per peer and doesn't
+// the proxy mempool. It keeps one broadcast queue per peer and doesn't
 // gossip a tx back to the peers it was received from.
 //
 //nolint:revive // named after NewMempoolInterfaceReactor, next to the flood Reactor
@@ -36,21 +36,25 @@ type MempoolInterfaceReactor struct {
 	activePersistentPeersSemaphore    *semaphore.Weighted
 	activeNonPersistentPeersSemaphore *semaphore.Weighted
 
-	// Map of peer ID to their broadcast channel
-	peerBroadcastChannels sync.Map
+	// Map of peer ID to its *peerTxQueue.
+	peerQueues sync.Map
 
 	// Stream for getting transactions to broadcast
 	txStream TxBroadcastStream
+
+	// Highest tx height seen on txStream, used as the height of the txs read
+	// from the mempool directly.
+	streamHeight atomic.Int64
 }
 
 // NewMempoolInterfaceReactor returns a new MempoolInterfaceReactor with the given config and mempool.
 func NewMempoolInterfaceReactor(config *cfg.MempoolConfig, mempool Mempool, txStream TxBroadcastStream, waitSync bool) *MempoolInterfaceReactor {
 	memR := &MempoolInterfaceReactor{
-		config:                config,
-		mempool:               mempool,
-		peerBroadcastChannels: sync.Map{},
-		txStream:              txStream,
-		waitSync:              atomic.Bool{},
+		config:     config,
+		mempool:    mempool,
+		peerQueues: sync.Map{},
+		txStream:   txStream,
+		waitSync:   atomic.Bool{},
 	}
 	memR.BaseReactor = *p2p.NewBaseReactor("Mempool", memR)
 	if waitSync {
@@ -147,32 +151,48 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 				return
 			}
 
-			peerChan := make(chan MempoolTx, memR.config.Size)
-
-			// Store the channel atomically. The new channel was never shared, so it
-			// is simply dropped if another routine already serves this peer.
-			if _, loaded := memR.peerBroadcastChannels.LoadOrStore(peer.ID(), peerChan); loaded {
+			queue := newPeerTxQueue(peer, memR.config.Size)
+			if !memR.storePeerQueue(queue) {
 				return
 			}
-			// Remove our own entry on exit, so a stale entry left by a peer that
-			// disconnected before LoadOrStore can't block a reconnecting peer. A
-			// newer channel stored for the same peer ID is left untouched.
-			defer memR.peerBroadcastChannels.CompareAndDelete(peer.ID(), peerChan)
+			// Remove our own entry on exit. An entry stored for a newer peer
+			// with the same ID is left untouched.
+			defer memR.peerQueues.CompareAndDelete(peer.ID(), queue)
 
 			// Start the broadcast routine
-			memR.broadcastTxPeerRoutine(peer, peerChan)
+			memR.broadcastTxPeerRoutine(peer, queue)
 		}()
 	}
 }
 
-// RemovePeer implements Reactor.
+// storePeerQueue stores queue for its peer. It replaces the entry of an
+// earlier peer with the same ID: a peer can stop and reconnect before the
+// routine of the earlier peer has removed its entry. It returns false if
+// another routine already serves this peer.
+func (memR *MempoolInterfaceReactor) storePeerQueue(queue *peerTxQueue) bool {
+	for {
+		existing, loaded := memR.peerQueues.LoadOrStore(queue.peer.ID(), queue)
+		if !loaded {
+			return true
+		}
+		if existing.(*peerTxQueue).peer == queue.peer {
+			return false
+		}
+		if memR.peerQueues.CompareAndSwap(queue.peer.ID(), existing, queue) {
+			return true
+		}
+	}
+}
+
+// RemovePeer implements Reactor. It removes the queue of peer, but not one
+// that a newer peer with the same ID already stored.
 //
-// The peer channel is deliberately not closed: broadcastTxRoutine may have
-// already loaded it from peerBroadcastChannels and a send on a closed channel
-// panics. broadcastTxPeerRoutine exits on peer.Quit() and the unreferenced
-// channel is garbage collected.
+// broadcastTxPeerRoutine exits on peer.Quit(), and the queue is garbage
+// collected once broadcastTxRoutine doesn't reference it anymore.
 func (memR *MempoolInterfaceReactor) RemovePeer(peer p2p.Peer, _ any) {
-	memR.peerBroadcastChannels.Delete(peer.ID())
+	if v, ok := memR.peerQueues.Load(peer.ID()); ok && v.(*peerTxQueue).peer == peer {
+		memR.peerQueues.CompareAndDelete(peer.ID(), v)
+	}
 }
 
 // Receive implements Reactor.
@@ -233,9 +253,10 @@ func (memR *MempoolInterfaceReactor) WaitSync() bool {
 	return memR.waitSync.Load()
 }
 
-// broadcastTxPeerRoutine sends txs to peer: first the txs already in the
-// mempool, then the txs that broadcastTxRoutine fans out to peerChan.
-func (memR *MempoolInterfaceReactor) broadcastTxPeerRoutine(peer p2p.Peer, peerChan chan MempoolTx) {
+// broadcastTxPeerRoutine sends txs to peer: the txs in the mempool when the
+// routine starts and whenever the queue overflowed, and the txs that
+// broadcastTxRoutine adds to queue otherwise.
+func (memR *MempoolInterfaceReactor) broadcastTxPeerRoutine(peer p2p.Peer, queue *peerTxQueue) {
 	// If the node is catching up, don't start sending txs to the peer.
 	if memR.WaitSync() {
 		select {
@@ -248,42 +269,73 @@ func (memR *MempoolInterfaceReactor) broadcastTxPeerRoutine(peer p2p.Peer, peerC
 		}
 	}
 
-	// peerChan only receives the txs streamed after it was registered, so the
-	// peer first gets all txs already in the mempool. The snapshot is taken
-	// after registering peerChan, so no tx is missed in between; a tx streamed
-	// while the snapshot is taken may be sent twice, and the peer drops the
-	// duplicate.
-	pending := memR.mempoolTxs()
-
+	var (
+		// Txs read from the mempool that remain to be sent.
+		pending []MempoolTx
+		// Keys of the txs sent to the peer, so that a tx in both the mempool
+		// and the queue is sent once. It is pruned to the txs still in the
+		// mempool on each resync, and reset if it grows too large between
+		// resyncs, in which case a few txs may be sent twice.
+		sent = make(map[types.TxKey]struct{})
+	)
 	for {
+		if queue.takeResync() {
+			// The mempool is read after the resync flag is cleared, so every tx
+			// streamed in between is in the mempool or in the queue.
+			pending, sent = memR.mempoolTxs(sent)
+		}
+
 		var memTx MempoolTx
 		if len(pending) > 0 {
 			memTx, pending = pending[0], pending[1:]
 		} else {
-			select {
-			case memTx = <-peerChan:
-			case <-peer.Quit():
-				return
-			case <-memR.Quit():
-				return
+			memTx = queue.pop()
+			if memTx == nil {
+				select {
+				case <-queue.notify:
+				case <-peer.Quit():
+					return
+				case <-memR.Quit():
+					return
+				}
+				continue
 			}
 		}
 
+		key := memTx.Tx().Key()
+		if _, ok := sent[key]; ok {
+			continue
+		}
 		if !memR.sendTx(peer, memTx) {
 			return
 		}
+
+		if len(sent) >= 2*queue.capacity {
+			clear(sent)
+		}
+		sent[key] = struct{}{}
 	}
 }
 
-// mempoolTxs returns the txs currently in the mempool, with their senders.
-// Their height is unknown, so it is set to 0 and the txs are sent to peers
-// regardless of their height.
-func (memR *MempoolInterfaceReactor) mempoolTxs() []MempoolTx {
+// mempoolTxs returns the txs currently in the mempool, with their senders,
+// except the ones whose key is in sent. It also returns the keys in sent of
+// the txs still in the mempool.
+//
+// The height the txs were validated at is unknown, so it is set to the latest
+// height seen on the tx stream.
+func (memR *MempoolInterfaceReactor) mempoolTxs(sent map[types.TxKey]struct{}) ([]MempoolTx, map[types.TxKey]struct{}) {
+	height := memR.streamHeight.Load()
 	txs := memR.mempool.ReapMaxTxs(-1)
 	memTxs := make([]MempoolTx, 0, len(txs))
+	stillSent := make(map[types.TxKey]struct{})
 	for _, tx := range txs {
-		b := NewMempoolTxBuilder().WithTx(tx)
-		senders, err := memR.mempool.GetSenders(tx.Key())
+		key := tx.Key()
+		if _, ok := sent[key]; ok {
+			stillSent[key] = struct{}{}
+			continue
+		}
+		b := NewMempoolTxBuilder().WithTx(tx).WithHeight(height)
+		senders, err := memR.mempool.GetSenders(key)
 		if err == nil {
 			for _, sender := range senders {
 				b.WithSender(sender)
@@ -291,7 +343,7 @@ func (memR *MempoolInterfaceReactor) mempoolTxs() []MempoolTx {
 		}
 		memTxs = append(memTxs, b.Build())
 	}
-	return memTxs
+	return memTxs, stillSent
 }
 
 // sendTx sends memTx to peer unless the peer sent it to us. It retries until
@@ -364,14 +416,12 @@ func (memR *MempoolInterfaceReactor) broadcastTxRoutine() {
 			if tx == nil {
 				continue
 			}
-			memR.peerBroadcastChannels.Range(func(key, value any) bool {
-				peerID := key.(p2p.ID)
-				ch := value.(chan MempoolTx)
-
-				select {
-				case ch <- tx:
-				default:
-					memR.Logger.Debug("peer broadcast channel is full", "peerID", peerID)
+			if h := tx.Height(); h > memR.streamHeight.Load() {
+				memR.streamHeight.Store(h)
+			}
+			memR.peerQueues.Range(func(key, value any) bool {
+				if value.(*peerTxQueue).push(tx) {
+					memR.Logger.Debug("Peer broadcast queue is full, resending the mempool", "peer", key)
 				}
 				return true
 			})
@@ -379,4 +429,73 @@ func (memR *MempoolInterfaceReactor) broadcastTxRoutine() {
 			return
 		}
 	}
+}
+
+// peerTxQueue holds the streamed txs that remain to be sent to a peer. When
+// it is full, it drops its txs and asks the peer routine to resync, that is
+// to send all txs in the mempool, instead of dropping new txs. The dropped
+// txs are in the mempool, since the stream only carries txs added to it.
+type peerTxQueue struct {
+	peer     p2p.Peer
+	capacity int
+	notify   chan struct{} // signaled when a tx is added or a resync is requested
+
+	mtx    sync.Mutex
+	txs    []MempoolTx
+	resync bool
+}
+
+// newPeerTxQueue returns a queue for peer that holds up to capacity txs. It
+// starts with a resync, so that the peer gets the txs that are already in the
+// mempool.
+func newPeerTxQueue(peer p2p.Peer, capacity int) *peerTxQueue {
+	return &peerTxQueue{
+		peer:     peer,
+		capacity: max(capacity, 1),
+		notify:   make(chan struct{}, 1),
+		resync:   true,
+	}
+}
+
+// push adds tx to the queue. If the queue is full, it drops all txs and
+// requests a resync instead; it returns true in that case.
+func (q *peerTxQueue) push(tx MempoolTx) (overflowed bool) {
+	q.mtx.Lock()
+	switch {
+	case len(q.txs) >= q.capacity:
+		q.txs = nil
+		q.resync = true
+		overflowed = true
+	default:
+		q.txs = append(q.txs, tx)
+	}
+	q.mtx.Unlock()
+
+	select {
+	case q.notify <- struct{}{}:
+	default:
+	}
+	return overflowed
+}
+
+// pop removes and returns the oldest tx in the queue, or nil if it is empty.
+func (q *peerTxQueue) pop() MempoolTx {
+	q.mtx.Lock()
+	defer q.mtx.Unlock()
+	if len(q.txs) == 0 {
+		return nil
+	}
+	tx := q.txs[0]
+	q.txs[0] = nil
+	q.txs = q.txs[1:]
+	return tx
+}
+
+// takeResync reports whether a resync was requested, and clears the request.
+func (q *peerTxQueue) takeResync() bool {
+	q.mtx.Lock()
+	defer q.mtx.Unlock()
+	resync := q.resync
+	q.resync = false
+	return resync
 }
