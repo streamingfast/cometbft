@@ -1,8 +1,10 @@
 package mempool
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/cometbft/cometbft/abci/example/kvstore"
 	abci "github.com/cometbft/cometbft/abci/types"
+	protomem "github.com/cometbft/cometbft/api/cometbft/mempool/v2"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/internal/test"
 
@@ -335,4 +338,229 @@ func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
 		return true
 	})
 	require.Zero(t, remaining)
+}
+
+// recordingPeer is a mock peer that records the txs sent on the mempool
+// channel. Its first failSends sends fail, as with a full send queue.
+type recordingPeer struct {
+	*mock.Peer
+
+	mtx       sync.Mutex
+	kv        map[string]any
+	failSends int
+	attempts  int
+	sent      types.Txs
+}
+
+func newRecordingPeer() *recordingPeer {
+	return &recordingPeer{Peer: mock.NewPeer(nil), kv: make(map[string]any)}
+}
+
+func (p *recordingPeer) Get(key string) any {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	return p.kv[key]
+}
+
+func (p *recordingPeer) Set(key string, value any) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.kv[key] = value
+}
+
+func (p *recordingPeer) setHeight(h int64) { p.Set(types.PeerStateKey, reactorTestPeerState{height: h}) }
+
+func (p *recordingPeer) Send(e p2p.Envelope) bool {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.attempts++
+	if p.failSends > 0 {
+		p.failSends--
+		return false
+	}
+	for _, tx := range e.Message.(*protomem.Txs).Txs {
+		p.sent = append(p.sent, tx)
+	}
+	return true
+}
+
+func (p *recordingPeer) sentTxs() types.Txs {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	return append(types.Txs(nil), p.sent...)
+}
+
+func (p *recordingPeer) waitSent(t *testing.T, n int) types.Txs {
+	t.Helper()
+	require.Eventually(t, func() bool { return len(p.sentTxs()) >= n }, 5*time.Second, 10*time.Millisecond,
+		"peer received %d txs, want %d", len(p.sentTxs()), n)
+	return p.sentTxs()
+}
+
+// newTestMempoolInterfaceReactor starts a broadcasting reactor on a kvstore
+// CListMempool, without a p2p network.
+func newTestMempoolInterfaceReactor(
+	t *testing.T,
+	stream TxBroadcastStream,
+	waitSync bool,
+	logger log.Logger,
+) (*MempoolInterfaceReactor, *CListMempool) {
+	t.Helper()
+	config := cfg.TestConfig()
+	config.Mempool.Broadcast = true
+
+	mp, cleanup := newMempoolInterfaceWithAppAndConfig(proxy.NewLocalClientCreator(kvstore.NewInMemoryApplication()))
+	t.Cleanup(cleanup)
+
+	reactor := NewMempoolInterfaceReactor(config.Mempool, mp, stream, waitSync)
+	reactor.SetLogger(logger)
+	reactor.SetSwitch(p2p.NewSwitch(config.P2P, nil))
+	require.NoError(t, reactor.Start())
+	t.Cleanup(func() { _ = reactor.Stop() })
+	return reactor, mp
+}
+
+// addPeer adds peer to reactor and waits until it is registered for
+// broadcasting, so that it gets all txs streamed afterwards.
+func addPeer(t *testing.T, reactor *MempoolInterfaceReactor, peer p2p.Peer) {
+	t.Helper()
+	reactor.AddPeer(peer)
+	require.Eventually(t, func() bool {
+		_, ok := reactor.peerBroadcastChannels.Load(peer.ID())
+		return ok
+	}, 5*time.Second, time.Millisecond)
+}
+
+func checkTxs(t *testing.T, mp Mempool, sender p2p.ID, txs ...types.Tx) {
+	t.Helper()
+	for _, tx := range txs {
+		_, err := mp.CheckTx(tx, sender)
+		require.NoError(t, err)
+	}
+}
+
+// TestMempoolInterfaceReactor_SendsMempoolToNewPeer checks that a new peer
+// gets the txs that were in the mempool before it connected, except the ones
+// it sent us, followed by the streamed txs.
+func TestMempoolInterfaceReactor_SendsMempoolToNewPeer(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	checkTxs(t, mp, "", types.Tx("a=1"), types.Tx("b=2"))
+	checkTxs(t, mp, peer.ID(), types.Tx("c=3"))
+	checkTxs(t, mp, "", types.Tx("d=4"))
+
+	addPeer(t, reactor, peer)
+	require.Equal(t, types.Txs{types.Tx("a=1"), types.Tx("b=2"), types.Tx("d=4")}, peer.waitSent(t, 3))
+
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(types.Tx("e=5")).Build())
+	require.Equal(t, types.Tx("e=5"), peer.waitSent(t, 4)[3])
+}
+
+// TestMempoolInterfaceReactor_LaggingPeerKeepsTx checks that a tx read from
+// the peer channel while the peer is lagging behind is sent once the peer
+// catches up, before the next tx, instead of being dropped.
+func TestMempoolInterfaceReactor_LaggingPeerKeepsTx(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+
+	high := types.Tx("high=1")
+	low := types.Tx("low=1")
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(10).WithTx(high).Build())
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(low).Build())
+
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Empty(t, peer.sentTxs(), "tx sent to a lagging peer")
+
+	peer.setHeight(9)
+	require.Equal(t, types.Txs{high, low}, peer.waitSent(t, 2))
+}
+
+// TestMempoolInterfaceReactor_RetriesFailedSend checks that a tx is retried
+// when peer.Send fails, instead of being dropped.
+func TestMempoolInterfaceReactor_RetriesFailedSend(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	peer.failSends = 2
+	addPeer(t, reactor, peer)
+
+	tx := types.Tx("retry=1")
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(tx).Build())
+	require.Equal(t, types.Txs{tx}, peer.waitSent(t, 1))
+
+	peer.mtx.Lock()
+	defer peer.mtx.Unlock()
+	require.Equal(t, 3, peer.attempts)
+}
+
+// TestMempoolInterfaceReactor_WaitSync checks that while the node is syncing
+// the reactor neither accepts txs from peers nor sends txs to them.
+func TestMempoolInterfaceReactor_WaitSync(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, true, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	checkTxs(t, mp, "", types.Tx("local=1"))
+	addPeer(t, reactor, peer)
+
+	reactor.Receive(p2p.Envelope{
+		Src:       peer,
+		ChannelID: MempoolChannel,
+		Message:   &protomem.Txs{Txs: [][]byte{types.Tx("remote=1")}},
+	})
+	require.Equal(t, 1, mp.Size(), "tx from peer accepted while syncing")
+
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Empty(t, peer.sentTxs(), "tx sent while syncing")
+
+	reactor.EnableInOutTxs()
+	require.Equal(t, types.Txs{types.Tx("local=1")}, peer.waitSent(t, 1))
+
+	reactor.Receive(p2p.Envelope{
+		Src:       peer,
+		ChannelID: MempoolChannel,
+		Message:   &protomem.Txs{Txs: [][]byte{types.Tx("remote=1")}},
+	})
+	require.Equal(t, 2, mp.Size())
+}
+
+// TestMempoolInterfaceReactor_StreamClosed checks that broadcastTxRoutine
+// stops when the tx stream is closed, instead of spinning on the closed
+// channel.
+func TestMempoolInterfaceReactor_StreamClosed(t *testing.T) {
+	var buf syncBuffer
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	newTestMempoolInterfaceReactor(t, stream, false, log.NewTMLogger(&buf))
+
+	close(stream.txChan)
+	require.Eventually(t, func() bool {
+		return strings.Contains(buf.String(), "Tx broadcast stream closed")
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+type syncBuffer struct {
+	mtx sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.String()
 }

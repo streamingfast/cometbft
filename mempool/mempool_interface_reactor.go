@@ -178,6 +178,11 @@ func (memR *MempoolInterfaceReactor) RemovePeer(peer p2p.Peer, _ any) {
 // Receive implements Reactor.
 // It adds any received transactions to the mempool.
 func (memR *MempoolInterfaceReactor) Receive(e p2p.Envelope) {
+	if memR.WaitSync() {
+		memR.Logger.Debug("Ignore message received while syncing", "src", e.Src, "chId", e.ChannelID, "msg", e.Message)
+		return
+	}
+
 	memR.Logger.Debug("Receive", "src", e.Src, "chId", e.ChannelID, "msg", e.Message)
 	switch msg := e.Message.(type) {
 	case *protomem.Txs:
@@ -228,54 +233,108 @@ func (memR *MempoolInterfaceReactor) WaitSync() bool {
 	return memR.waitSync.Load()
 }
 
-// Send new mempool txs to peer.
+// broadcastTxPeerRoutine sends txs to peer: first the txs already in the
+// mempool, then the txs that broadcastTxRoutine fans out to peerChan.
 func (memR *MempoolInterfaceReactor) broadcastTxPeerRoutine(peer p2p.Peer, peerChan chan MempoolTx) {
-	for {
-		// In case of both next.NextWaitChan() and peer.Quit() are variable at the same time
-		if !memR.IsRunning() || !peer.IsRunning() {
+	// If the node is catching up, don't start sending txs to the peer.
+	if memR.WaitSync() {
+		select {
+		case <-memR.waitSyncCh:
+			// EnableInOutTxs() has set WaitSync() to false.
+		case <-peer.Quit():
+			return
+		case <-memR.Quit():
 			return
 		}
+	}
 
-		// Make sure the peer is up to date.
-		peerState, ok := peer.Get(types.PeerStateKey).(PeerState)
-		if !ok {
-			// Peer does not have a state yet. We set it in the consensus reactor, but
-			// when we add peer in Switch, the order we call reactors#AddPeer is
-			// different every time due to us using a map. Sometimes other reactors
-			// will be initialized before the consensus reactor. We should wait a few
-			// milliseconds and retry.
-			time.Sleep(PeerCatchupSleepIntervalMS * time.Millisecond)
-			continue
-		}
+	// peerChan only receives the txs streamed after it was registered, so the
+	// peer first gets all txs already in the mempool. The snapshot is taken
+	// after registering peerChan, so no tx is missed in between; a tx streamed
+	// while the snapshot is taken may be sent twice, and the peer drops the
+	// duplicate.
+	pending := memR.mempoolTxs()
 
-		select {
-		case memTx, ok := <-peerChan:
-			if !ok {
+	for {
+		var memTx MempoolTx
+		if len(pending) > 0 {
+			memTx, pending = pending[0], pending[1:]
+		} else {
+			select {
+			case memTx = <-peerChan:
+			case <-peer.Quit():
+				return
+			case <-memR.Quit():
 				return
 			}
+		}
 
-			if peerState.GetHeight() < memTx.Height()-1 {
-				time.Sleep(PeerCatchupSleepIntervalMS * time.Millisecond)
-				continue
-			}
-
-			if !memTx.IsSender(peer.ID()) {
-				success := peer.Send(p2p.Envelope{
-					ChannelID: MempoolChannel,
-					Message:   &protomem.Txs{Txs: [][]byte{memTx.Tx()}},
-				})
-				if !success {
-					time.Sleep(PeerCatchupSleepIntervalMS * time.Millisecond)
-					continue
-				}
-			}
-		case <-peer.Quit():
+		if !memR.sendTx(peer, memTx) {
 			return
 		}
 	}
 }
 
-// broadcastTxRoutine broadcasts transactions from the mempool to all peers.
+// mempoolTxs returns the txs currently in the mempool, with their senders.
+// Their height is unknown, so it is set to 0 and the txs are sent to peers
+// regardless of their height.
+func (memR *MempoolInterfaceReactor) mempoolTxs() []MempoolTx {
+	txs := memR.mempool.ReapMaxTxs(-1)
+	memTxs := make([]MempoolTx, 0, len(txs))
+	for _, tx := range txs {
+		b := NewMempoolTxBuilder().WithTx(tx)
+		senders, err := memR.mempool.GetSenders(tx.Key())
+		if err == nil {
+			for _, sender := range senders {
+				b.WithSender(sender)
+			}
+		}
+		memTxs = append(memTxs, b.Build())
+	}
+	return memTxs
+}
+
+// sendTx sends memTx to peer unless the peer sent it to us. It retries until
+// the peer has caught up with the tx height and has room for the message. It
+// returns false if the peer or the reactor stopped before the tx was sent.
+func (memR *MempoolInterfaceReactor) sendTx(peer p2p.Peer, memTx MempoolTx) bool {
+	if memTx.IsSender(peer.ID()) {
+		return true
+	}
+
+	for {
+		// The peer may not have a state yet. We set it in the consensus
+		// reactor, but when we add peer in Switch, the order we call
+		// reactors#AddPeer is different every time due to us using a map.
+		// Sometimes other reactors will be initialized before the consensus
+		// reactor. We wait a few milliseconds and retry.
+		//
+		// If the peer is lagging behind by more than one block, we don't send
+		// the tx yet, as the peer can't validate it. See [RFC 103].
+		//
+		// [RFC 103]: https://github.com/CometBFT/cometbft/blob/main/docs/references/rfc/rfc-103-incoming-txs-when-catching-up.md
+		peerState, ok := peer.Get(types.PeerStateKey).(PeerState)
+		if ok && peerState.GetHeight()+1 >= memTx.Height() {
+			if peer.Send(p2p.Envelope{
+				ChannelID: MempoolChannel,
+				Message:   &protomem.Txs{Txs: [][]byte{memTx.Tx()}},
+			}) {
+				return true
+			}
+		}
+
+		select {
+		case <-time.After(PeerCatchupSleepIntervalMS * time.Millisecond):
+		case <-peer.Quit():
+			return false
+		case <-memR.Quit():
+			return false
+		}
+	}
+}
+
+// broadcastTxRoutine fans the txs from txStream out to the broadcast channels
+// of all peers.
 func (memR *MempoolInterfaceReactor) broadcastTxRoutine() {
 	// If the node is catching up, don't start this routine immediately.
 	if memR.WaitSync() {
@@ -296,25 +355,26 @@ func (memR *MempoolInterfaceReactor) broadcastTxRoutine() {
 	txChan := memR.txStream.GetTxChannel()
 
 	for {
-		if !memR.IsRunning() {
-			return
-		}
-
 		select {
-		case tx := <-txChan:
-			if tx != nil {
-				memR.peerBroadcastChannels.Range(func(key, value any) bool {
-					peerID := key.(p2p.ID)
-					ch := value.(chan MempoolTx)
-
-					select {
-					case ch <- tx:
-					default:
-						memR.Logger.Debug("peer broadcast channel is full", "peerID", peerID)
-					}
-					return true
-				})
+		case tx, ok := <-txChan:
+			if !ok {
+				memR.Logger.Error("Tx broadcast stream closed, broadcasting is disabled")
+				return
 			}
+			if tx == nil {
+				continue
+			}
+			memR.peerBroadcastChannels.Range(func(key, value any) bool {
+				peerID := key.(p2p.ID)
+				ch := value.(chan MempoolTx)
+
+				select {
+				case ch <- tx:
+				default:
+					memR.Logger.Debug("peer broadcast channel is full", "peerID", peerID)
+				}
+				return true
+			})
 		case <-memR.Quit():
 			return
 		}
