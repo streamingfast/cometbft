@@ -15,6 +15,13 @@ type unsyncLocalClient struct {
 
 	mtx sync.Mutex
 	Callback
+
+	// lastDelivered is closed once the callbacks of the most recent
+	// CheckTxAsync request have been delivered. Each request waits for the
+	// previous one's channel before delivering its own callbacks, so callbacks
+	// run one at a time and in request order while the application checks run
+	// in parallel. Guarded by mtx.
+	lastDelivered chan struct{}
 }
 
 var _ Client = (*unsyncLocalClient)(nil)
@@ -43,24 +50,44 @@ func (app *unsyncLocalClient) SetResponseCallback(cb Callback) {
 	app.mtx.Unlock()
 }
 
+// CheckTxAsync runs CheckTx on the application in a new goroutine and returns
+// immediately. Application calls of consecutive requests run in parallel, but
+// their callbacks are delivered serially and in request order, as with the
+// other ABCI clients. Flush waits until all callbacks have been delivered.
 func (app *unsyncLocalClient) CheckTxAsync(ctx context.Context, req *types.CheckTxRequest) (*ReqRes, error) {
 	reqres := NewReqRes(types.ToCheckTxRequest(req))
 
+	delivered := make(chan struct{})
+	app.mtx.Lock()
+	prevDelivered := app.lastDelivered
+	app.lastDelivered = delivered
+	app.mtx.Unlock()
+
 	go func() {
+		defer close(delivered)
+
 		res, err := app.Application.CheckTx(ctx, req)
 		if err != nil {
-			reqres.Response = types.ToExceptionResponse("") // optimistic recheck failed
+			reqres.Response = types.ToExceptionResponse(err.Error())
 		} else {
 			reqres.Response = types.ToCheckTxResponse(res)
 		}
 
-		if app.Callback != nil {
-			app.Callback(reqres.Request, reqres.Response)
+		if prevDelivered != nil {
+			<-prevDelivered
 		}
 
-		reqres.Done()
+		app.mtx.Lock()
+		cb := app.Callback
+		app.mtx.Unlock()
+		if cb != nil {
+			cb(reqres.Request, reqres.Response)
+		}
 
+		// Invoke the callback before releasing waiters, so that they see its
+		// result in reqres.Error().
 		reqres.InvokeCallback()
+		reqres.Done()
 	}()
 
 	return reqres, nil
@@ -72,8 +99,22 @@ func (*unsyncLocalClient) Error() error {
 	return nil
 }
 
-func (*unsyncLocalClient) Flush(context.Context) error {
-	return nil
+// Flush blocks until the callbacks of all CheckTxAsync requests issued so far
+// have been delivered.
+func (app *unsyncLocalClient) Flush(ctx context.Context) error {
+	app.mtx.Lock()
+	lastDelivered := app.lastDelivered
+	app.mtx.Unlock()
+
+	if lastDelivered == nil {
+		return nil
+	}
+	select {
+	case <-lastDelivered:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (*unsyncLocalClient) Echo(_ context.Context, msg string) (*types.EchoResponse, error) {
