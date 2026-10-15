@@ -17,6 +17,7 @@ import (
 
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/p2p"
+	"github.com/cometbft/cometbft/p2p/mock"
 	"github.com/cometbft/cometbft/proxy"
 	"github.com/cometbft/cometbft/types"
 )
@@ -295,4 +296,51 @@ func TestMempoolInterfaceReactor_BroadcastTxsMessage(t *testing.T) {
 
 	// Pass the slice of reactors to the wait function
 	waitForTxsOnMempoolsInterface(t, addedTxs, reactors)
+}
+
+// TestMempoolInterfaceReactor_RemovePeerDuringBroadcast removes peers while
+// broadcastTxRoutine fans transactions out to their channels. RemovePeer used
+// to close the peer channel, which panicked when the broadcaster had already
+// loaded it from peerBroadcastChannels.
+func TestMempoolInterfaceReactor_RemovePeerDuringBroadcast(t *testing.T) {
+	config := cfg.TestConfig()
+	config.Mempool.Broadcast = true
+
+	txStream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor := NewMempoolInterfaceReactor(config.Mempool, nil, txStream, false)
+	reactor.SetLogger(log.TestingLogger())
+	require.NoError(t, reactor.Start())
+	t.Cleanup(func() { _ = reactor.Stop() })
+
+	memTx := NewMempoolTxBuilder().WithHeight(1).WithTx(types.Tx("k=v")).Build()
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			case txStream.txChan <- memTx:
+			}
+		}
+	}()
+
+	for i := 0; i < 2000; i++ {
+		peer := mock.NewPeer(nil)
+		reactor.peerBroadcastChannels.Store(peer.ID(), make(chan MempoolTx, 1))
+		reactor.RemovePeer(peer, nil)
+	}
+
+	close(done)
+	wg.Wait()
+
+	remaining := 0
+	reactor.peerBroadcastChannels.Range(func(_, _ any) bool {
+		remaining++
+		return true
+	})
+	require.Zero(t, remaining)
 }

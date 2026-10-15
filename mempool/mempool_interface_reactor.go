@@ -117,6 +117,7 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 				}
 
 				if peerSemaphore != nil {
+					acquired := false
 					for peer.IsRunning() {
 						// Block on the semaphore until a slot is available to start gossiping with this peer.
 						// Do not block indefinitely, in case the peer is disconnected before gossiping starts.
@@ -126,13 +127,15 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 						err := peerSemaphore.Acquire(ctxTimeout, 1)
 						cancel()
 
-						if err != nil {
-							continue
+						if err == nil {
+							acquired = true
+							break
 						}
+					}
 
+					if acquired {
 						// Release semaphore to allow other peer to start sending transactions.
 						defer peerSemaphore.Release(1)
-						break
 					}
 				}
 			}
@@ -144,12 +147,15 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 
 			peerChan := make(chan MempoolTx, memR.config.Size)
 
-			// Store the channel atomically
+			// Store the channel atomically. The new channel was never shared, so it
+			// is simply dropped if another routine already serves this peer.
 			if _, loaded := memR.peerBroadcastChannels.LoadOrStore(peer.ID(), peerChan); loaded {
-				// If channel already exists, close the new one and return
-				close(peerChan)
 				return
 			}
+			// Remove our own entry on exit, so a stale entry left by a peer that
+			// disconnected before LoadOrStore can't block a reconnecting peer. A
+			// newer channel stored for the same peer ID is left untouched.
+			defer memR.peerBroadcastChannels.CompareAndDelete(peer.ID(), peerChan)
 
 			// Start the broadcast routine
 			memR.broadcastTxPeerRoutine(peer, peerChan)
@@ -158,10 +164,13 @@ func (memR *MempoolInterfaceReactor) AddPeer(peer p2p.Peer) {
 }
 
 // RemovePeer implements Reactor.
+//
+// The peer channel is deliberately not closed: broadcastTxRoutine may have
+// already loaded it from peerBroadcastChannels and a send on a closed channel
+// panics. broadcastTxPeerRoutine exits on peer.Quit() and the unreferenced
+// channel is garbage collected.
 func (memR *MempoolInterfaceReactor) RemovePeer(peer p2p.Peer, _ interface{}) {
-	if ch, exists := memR.peerBroadcastChannels.LoadAndDelete(peer.ID()); exists {
-		close(ch.(chan MempoolTx))
-	}
+	memR.peerBroadcastChannels.Delete(peer.ID())
 }
 
 // Receive implements Reactor.
