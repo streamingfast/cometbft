@@ -343,7 +343,9 @@ func (book *AddrBookMock) AddAddress(addr *NetAddress, _ *NetAddress) error {
 	book.Addrs[addr.String()] = struct{}{}
 	return nil
 }
+
 func (book *AddrBookMock) AddOurAddress(addr *NetAddress) { book.OurAddrs[addr.String()] = struct{}{} }
+
 func (book *AddrBookMock) OurAddress(addr *NetAddress) bool {
 	_, ok := book.OurAddrs[addr.String()]
 	return ok
