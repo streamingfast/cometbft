@@ -242,16 +242,12 @@ clean_certs:
 ###                  Formatting, linting, and vetting                       ###
 ###############################################################################
 
-#? lint: Lint, format and fix typos
-lint: pre-commit
-	@pre-commit run
-.PHONY: lint
+LINT_BASE ?= origin/v1.x-inj
 
-#? pre-commit: Create pre-commit hook using the pre-commit framework.
-pre-commit:
-	@which pre-commit || pip3 install pre-commit
-	@pre-commit install
-.PHONY: pre-commit
+#? lint: Lint and format-check code changed since the merge base with LINT_BASE
+lint:
+	@golangci-lint run --timeout 15m --new-from-merge-base=$(LINT_BASE)
+.PHONY: lint
 
 DESTINATION = ./index.html.md
 
