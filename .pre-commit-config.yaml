@@ -9,20 +9,9 @@ repos:
       - id: golangci-lint-full
         # Only report issues introduced since the merge base with v1.x-inj, so
         # pre-existing findings in fork code don't block unrelated changes.
+        # This includes the formatters (gofumpt, gci, goimports, gofmt)
+        # configured in .golangci.yml.
         args: [--timeout, 10m, --new-from-merge-base=origin/v1.x-inj] # for CI
-
-  # gofumpt (does not have .pre-commmit-hooks.yaml)
-  - repo: local
-    hooks:
-      - id: gofumpt
-        name: "gofumpt"
-        additional_dependencies:
-          - mvdan.cc/gofumpt@v0.12.0
-        entry: "gofumpt"
-        language: golang
-        args: [-w, .]
-        types: [go]
-        pass_filenames: false
 
   # codespell
   - repo: https://github.com/codespell-project/codespell
