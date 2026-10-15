@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/InjectiveLabs/metrics/v2"
@@ -147,6 +148,9 @@ func StateProvider(stateProvider statesync.StateProvider) Option {
 	}
 }
 
+// WithCustomMempoolOnProxyMempool sets the mempool and the tx broadcast stream
+// that a node with the "proxy" mempool type forwards to. It panics if the
+// node's mempool is not a proxy mempool.
 func WithCustomMempoolOnProxyMempool(customMempool mempl.Mempool, txBroadcastStream mempl.TxBroadcastStream) Option {
 	return func(n *Node) {
 		proxyMempool, ok := n.mempool.(*mempl.ProxyMempool)
@@ -613,6 +617,15 @@ func NewNodeWithCliParams(
 
 	for _, option := range options {
 		option(node)
+	}
+
+	if proxyMempool, ok := mempool.(*mempl.ProxyMempool); ok {
+		if proxyMempool.Mempool == nil {
+			return nil, errors.New("proxy mempool has no custom mempool set; use the WithCustomMempoolOnProxyMempool option")
+		}
+		if config.Mempool.Broadcast && proxyMempool.TxBroadcastStream == nil {
+			return nil, errors.New("proxy mempool has no tx broadcast stream set; use the WithCustomMempoolOnProxyMempool option")
+		}
 	}
 
 	return node, nil
@@ -1088,6 +1101,16 @@ func makeNodeInfo(
 			TxIndex:    txIndexerStatus,
 			RPCAddress: config.RPC.ListenAddress,
 		},
+	}
+
+	if config.Mempool.Type == cfg.MempoolTypeProxy {
+		// The proxy mempool reactor doesn't speak the DOG protocol, so it
+		// doesn't register the mempool control channel. Advertising it would
+		// let DOG peers send HaveTx and ResetRoute messages, and the
+		// connection drops peers that send on an unknown channel.
+		nodeInfo.Channels = slices.DeleteFunc(nodeInfo.Channels, func(ch byte) bool {
+			return ch == mempl.MempoolControlChannel
+		})
 	}
 
 	if config.P2P.PexReactor {
