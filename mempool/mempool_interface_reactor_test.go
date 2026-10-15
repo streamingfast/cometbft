@@ -166,12 +166,13 @@ func addRandomTxsToMempoolAndStream(
 		txs[i] = tx
 
 		reqres, err := mempool.CheckTx(tx, senderID)
+		require.NoError(t, err, "mempool.CheckTx returned an error for tx %X. Error: %v", tx, err)
+		reqres.Wait()
 		res := reqres.Response.GetCheckTx()
 
 		if res.IsErr() {
 			t.Logf("CheckTx callback failed for tx %X: %s, code: %d, log: %s, info: %s", tx, res.Log, res.Code, res.Log, res.Info)
 		}
-		require.NoError(t, err, "mempool.CheckTx returned an error for tx %X. Error: %v", tx, err)
 		require.EqualValuesf(t, abci.CodeTypeOK, res.Code, "CheckTx callback response code is not OK for tx %X. Got %d", tx, res.Code)
 
 		mempoolTx := NewMempoolTxBuilder().
