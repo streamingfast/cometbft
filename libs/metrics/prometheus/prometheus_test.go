@@ -104,6 +104,9 @@ func TestGauge(t *testing.T) {
 
 	value := func() []float64 {
 		matches := re.FindStringSubmatch(scrape())
+		if len(matches) < 2 {
+			return nil
+		}
 		f, _ := strconv.ParseFloat(matches[1], 64)
 		return []float64{f}
 	}
