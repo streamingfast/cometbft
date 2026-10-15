@@ -69,6 +69,63 @@ x * TestHalt1 - if we see +2/3 precommits after timing out into new round, we sh
 
 */
 
+type stateLogEntry struct {
+	level   string
+	message string
+	keyvals []any
+}
+
+type stateLogRecorder struct {
+	entries *[]stateLogEntry
+	keyvals []any
+}
+
+func newStateLogRecorder() *stateLogRecorder {
+	entries := make([]stateLogEntry, 0)
+	return &stateLogRecorder{entries: &entries}
+}
+
+func (l *stateLogRecorder) Debug(msg string, keyvals ...any) {
+	l.record("debug", msg, keyvals...)
+}
+
+func (l *stateLogRecorder) Info(msg string, keyvals ...any) {
+	l.record("info", msg, keyvals...)
+}
+
+func (l *stateLogRecorder) Error(msg string, keyvals ...any) {
+	l.record("error", msg, keyvals...)
+}
+
+func (l *stateLogRecorder) With(keyvals ...any) log.Logger {
+	nextKeyvals := append([]any{}, l.keyvals...)
+	nextKeyvals = append(nextKeyvals, keyvals...)
+	return &stateLogRecorder{
+		entries: l.entries,
+		keyvals: nextKeyvals,
+	}
+}
+
+func (l *stateLogRecorder) record(level string, msg string, keyvals ...any) {
+	entryKeyvals := append([]any{}, l.keyvals...)
+	entryKeyvals = append(entryKeyvals, keyvals...)
+	*l.entries = append(*l.entries, stateLogEntry{
+		level:   level,
+		message: msg,
+		keyvals: entryKeyvals,
+	})
+}
+
+func (l *stateLogRecorder) count(level string, message string) int {
+	count := 0
+	for _, entry := range *l.entries {
+		if entry.level == level && entry.message == message {
+			count++
+		}
+	}
+	return count
+}
+
 // ----------------------------------------------------------------------------------------------------
 // ProposeSuite
 
@@ -3115,6 +3172,31 @@ func TestStateOutputVoteStats(t *testing.T) {
 		t.Errorf("should not output stats message after receiving the known vote or vote from bigger height")
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+func TestStateHandleMsgLogsAddingVoteErrorsAtDebug(t *testing.T) {
+	cs, vss := randState(2)
+	chainID := cs.state.ChainID
+	logger := newStateLogRecorder()
+	cs.SetLogger(logger)
+
+	peer := p2pmock.NewPeer(nil)
+	blockID := types.BlockID{
+		Hash: cmtrand.Bytes(tmhash.Size),
+	}
+
+	vote := signVote(vss[1], types.PrecommitType, chainID, blockID, true)
+	cs.handleMsg(msgInfo{&VoteMessage{vote}, peer.ID(), time.Time{}})
+
+	conflictingSignatureVote := vote.Copy()
+	conflictingSignatureVote.Signature = append([]byte(nil), vote.Signature...)
+	require.NotEmpty(t, conflictingSignatureVote.Signature)
+	conflictingSignatureVote.Signature[0] ^= 0x01
+
+	cs.handleMsg(msgInfo{&VoteMessage{conflictingSignatureVote}, peer.ID(), time.Time{}})
+
+	require.Equal(t, 1, logger.count("debug", "Failed to process message"))
+	require.Zero(t, logger.count("info", "Failed to process message"))
 }
 
 func TestSignSameVoteTwice(t *testing.T) {
