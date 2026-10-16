@@ -464,6 +464,7 @@ func TestMempoolInterfaceReactor_SendsMempoolToNewPeer(t *testing.T) {
 	addPeer(t, reactor, peer)
 	require.Equal(t, types.Txs{types.Tx("a=1"), types.Tx("b=2"), types.Tx("d=4")}, peer.waitSent(t, 3))
 
+	checkTxs(t, mp, "", types.Tx("e=5"))
 	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(types.Tx("e=5")).Build())
 	require.Equal(t, types.Tx("e=5"), peer.waitSent(t, 4)[3])
 }
@@ -718,6 +719,29 @@ func TestMempoolInterfaceReactor_SkipsTxRemovedWhileWaiting(t *testing.T) {
 	require.Empty(t, peer.sentTxs())
 
 	require.NoError(t, mp.RemoveTxByKey(removed.Key()))
+	require.Equal(t, types.Txs{kept}, peer.waitSent(t, 1))
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Equal(t, types.Txs{kept}, peer.sentTxs())
+}
+
+// TestMempoolInterfaceReactor_SkipsTxRemovedBeforeSend checks that a queued tx
+// that left the mempool before the peer routine got to it is not sent, even
+// to a peer that is caught up.
+func TestMempoolInterfaceReactor_SkipsTxRemovedBeforeSend(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+
+	removed := types.Tx("removed=1")
+	kept := types.Tx("kept=1")
+	checkTxs(t, mp, "", removed, kept)
+	require.NoError(t, mp.RemoveTxByKey(removed.Key()))
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(removed).Build())
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(kept).Build())
+
 	require.Equal(t, types.Txs{kept}, peer.waitSent(t, 1))
 	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
 	require.Equal(t, types.Txs{kept}, peer.sentTxs())

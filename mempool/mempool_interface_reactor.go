@@ -357,18 +357,20 @@ func (memR *MempoolInterfaceReactor) mempoolTxs() ([]MempoolTx, map[types.TxKey]
 	return memTxs, keys
 }
 
-// sendTx sends memTx to peer unless the peer sent it to us. It retries until
-// the peer has caught up with the tx height and has room for the message, and
-// gives up if the tx leaves the mempool in the meantime. It returns false if
+// sendTx sends memTx to peer unless the peer sent it to us or it is no longer
+// in the mempool. It retries until the peer has caught up with the tx height
+// and has room for the message, and gives up if the tx leaves the mempool in
+// the meantime. It returns false if
 // the peer or the reactor stopped before the tx was sent.
 func (memR *MempoolInterfaceReactor) sendTx(peer p2p.Peer, memTx MempoolTx) bool {
 	if memTx.IsSender(peer.ID()) {
 		return true
 	}
 
-	for retry := false; ; retry = true {
-		// The tx may have been committed or evicted while we waited.
-		if retry && !memR.mempool.Contains(memTx.Tx().Key()) {
+	for {
+		// The tx may have been committed or evicted while it was queued or
+		// while we waited for the peer.
+		if !memR.mempool.Contains(memTx.Tx().Key()) {
 			return true
 		}
 
