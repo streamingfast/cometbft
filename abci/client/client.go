@@ -101,7 +101,10 @@ func (r *ReqRes) SetCallback(cb func(res *types.Response) error) {
 
 	if r.callbackInvoked {
 		r.mtx.Unlock()
-		r.cbErr = cb(r.Response)
+		err := cb(r.Response)
+		r.mtx.Lock()
+		r.cbErr = err
+		r.mtx.Unlock()
 		return
 	}
 
@@ -121,8 +124,11 @@ func (r *ReqRes) InvokeCallback() {
 	r.callbackInvoked = true
 }
 
-// Error returns the error returned by the callback, if any.
+// Error returns the error returned by the callback, if any. It is safe to
+// call while the callback is being invoked by another goroutine.
 func (r *ReqRes) Error() error {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	return r.cbErr
 }
 

@@ -3,6 +3,7 @@ package abcicli_test //nolint:revive // same test package name as the other clie
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -218,4 +219,44 @@ func TestUnsyncLocalClientCallbackErrorVisibleAfterWait(t *testing.T) {
 	app.open("x")
 	rr.Wait()
 	require.ErrorIs(t, rr.Error(), cbErr)
+}
+
+// TestUnsyncLocalClientErrorDuringCallback reads the callback error while the
+// callback runs on another goroutine, as BroadcastTxAsync does right after
+// CheckTx returns. Run with -race: reads of ReqRes.Error used to race with the
+// callback writing it.
+func TestUnsyncLocalClientErrorDuringCallback(t *testing.T) {
+	cbErr := errors.New("rejected")
+	for _, setEarly := range []bool{true, false} {
+		app := newGatedCheckTxApp()
+		c := newStartedUnsyncClient(t, app)
+
+		rr, err := c.CheckTxAsync(context.Background(), &types.CheckTxRequest{Tx: []byte("x")})
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for rr.Error() == nil {
+				runtime.Gosched()
+			}
+		}()
+
+		cb := func(*types.Response) error { return cbErr }
+		if setEarly {
+			rr.SetCallback(cb)
+			app.open("x")
+		} else {
+			app.open("x")
+			require.NoError(t, c.Flush(context.Background()))
+			rr.SetCallback(cb)
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("callback error never became visible")
+		}
+		require.ErrorIs(t, rr.Error(), cbErr)
+	}
 }
