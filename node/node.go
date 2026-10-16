@@ -466,7 +466,6 @@ func NewNodeWithCliParams(
 		logger,
 		appInfoResponse,
 		meter.SubMeter("mempool", metrics.Tag("svc", "mempool")),
-		blockStore,
 	)
 
 	evidenceReactor, evidencePool, err := createEvidenceReactor(config, dbProvider, stateStore, blockStore, logger)
@@ -517,6 +516,13 @@ func NewNodeWithCliParams(
 		privValidator, csMetrics, waitSync, eventBus, consensusLogger, offlineStateSyncHeight,
 		meter.SubMeter("consensus", metrics.Tag("svc", "consensus")),
 	)
+
+	if r, ok := mempoolReactor.(*mempl.MempoolInterfaceReactor); ok {
+		// Not the block store height: it stays 0 after state sync until a
+		// block is saved. State sync and block sync update the consensus
+		// state when they hand over to consensus.
+		r.SetLatestHeightFunc(consensusState.GetLastHeight)
+	}
 
 	err = stateStore.SetOfflineStateSyncHeight(0)
 	if err != nil {

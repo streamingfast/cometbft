@@ -326,13 +326,19 @@ func (memR *MempoolInterfaceReactor) broadcastTxPeerRoutine(peer p2p.Peer, queue
 	}
 }
 
+// LatestHeight returns the latest committed height, as given by the function
+// set with SetLatestHeightFunc, or 0 if none is set.
+func (memR *MempoolInterfaceReactor) LatestHeight() int64 {
+	if memR.latestHeight == nil {
+		return 0
+	}
+	return memR.latestHeight()
+}
+
 // mempoolTxs returns the txs currently in the mempool, with their senders,
 // and their keys.
 func (memR *MempoolInterfaceReactor) mempoolTxs() ([]MempoolTx, map[types.TxKey]struct{}) {
-	var height int64
-	if memR.latestHeight != nil {
-		height = memR.latestHeight()
-	}
+	height := memR.LatestHeight()
 	txs := memR.mempool.ReapMaxTxs(-1)
 	memTxs := make([]MempoolTx, 0, len(txs))
 	keys := make(map[types.TxKey]struct{}, len(txs))
