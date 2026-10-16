@@ -79,7 +79,11 @@ type ReqRes struct {
 	// called and once during the normal request.
 	callbackInvoked bool
 	cb              func(*types.Response) error // A single callback that may be set.
-	cbErr           error
+
+	// cbErr has its own mutex: mtx is held while the callback runs, and the
+	// callback may call Error.
+	cbErrMtx cmtsync.Mutex
+	cbErr    error
 }
 
 func NewReqRes(req *types.Request) *ReqRes {
@@ -101,10 +105,7 @@ func (r *ReqRes) SetCallback(cb func(res *types.Response) error) {
 
 	if r.callbackInvoked {
 		r.mtx.Unlock()
-		err := cb(r.Response)
-		r.mtx.Lock()
-		r.cbErr = err
-		r.mtx.Unlock()
+		r.setError(cb(r.Response))
 		return
 	}
 
@@ -119,7 +120,7 @@ func (r *ReqRes) InvokeCallback() {
 	defer r.mtx.Unlock()
 
 	if r.cb != nil && r.Response != nil {
-		r.cbErr = r.cb(r.Response)
+		r.setError(r.cb(r.Response))
 	}
 	r.callbackInvoked = true
 }
@@ -127,9 +128,15 @@ func (r *ReqRes) InvokeCallback() {
 // Error returns the error returned by the callback, if any. It is safe to
 // call while the callback is being invoked by another goroutine.
 func (r *ReqRes) Error() error {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.cbErrMtx.Lock()
+	defer r.cbErrMtx.Unlock()
 	return r.cbErr
+}
+
+func (r *ReqRes) setError(err error) {
+	r.cbErrMtx.Lock()
+	r.cbErr = err
+	r.cbErrMtx.Unlock()
 }
 
 func waitGroup1() (wg *sync.WaitGroup) {

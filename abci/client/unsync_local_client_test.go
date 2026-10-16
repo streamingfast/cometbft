@@ -276,3 +276,21 @@ func TestUnsyncLocalClientErrorDuringCallback(t *testing.T) {
 		require.ErrorIs(t, rr.Error(), cbErr)
 	}
 }
+
+// TestUnsyncLocalClientCallbackCallsError checks that a callback can read the
+// error of its own request. Error used to take the mutex held while the
+// callback runs, which deadlocked the request and every later callback.
+func TestUnsyncLocalClientCallbackCallsError(t *testing.T) {
+	app := newGatedCheckTxApp()
+	c := newStartedUnsyncClient(t, app)
+
+	rr, err := c.CheckTxAsync(context.Background(), &types.CheckTxRequest{Tx: []byte("x")})
+	require.NoError(t, err)
+	rr.SetCallback(func(*types.Response) error { return rr.Error() })
+	app.open("x")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, c.Flush(ctx), "callback deadlocked")
+	rr.Wait()
+}
