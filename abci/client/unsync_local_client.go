@@ -2,6 +2,7 @@ package abcicli
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/cometbft/cometbft/abci/types"
@@ -25,6 +26,14 @@ type unsyncLocalClient struct {
 }
 
 var _ Client = (*unsyncLocalClient)(nil)
+
+// CodeTypeCheckTxFailed and CodespaceCheckTxFailed identify the CheckTx
+// response of the unsync local client's CheckTxAsync when the application
+// returned an error or panicked.
+const (
+	CodeTypeCheckTxFailed  uint32 = 1
+	CodespaceCheckTxFailed        = "abci-client"
+)
 
 // NewUnsyncLocalClient creates a local client, which wraps the application
 // interface that Comet as the client will call to the application as the
@@ -66,12 +75,7 @@ func (app *unsyncLocalClient) CheckTxAsync(ctx context.Context, req *types.Check
 	go func() {
 		defer close(delivered)
 
-		res, err := app.Application.CheckTx(ctx, req)
-		if err != nil {
-			reqres.Response = types.ToExceptionResponse(err.Error())
-		} else {
-			reqres.Response = types.ToCheckTxResponse(res)
-		}
+		reqres.Response = types.ToCheckTxResponse(app.checkTx(ctx, req))
 
 		if prevDelivered != nil {
 			<-prevDelivered
@@ -91,6 +95,32 @@ func (app *unsyncLocalClient) CheckTxAsync(ctx context.Context, req *types.Check
 	}()
 
 	return reqres, nil
+}
+
+// checkTx calls CheckTx on the application. An error or a panic is reported
+// as a rejected tx: the mempool callbacks expect a CheckTx response, and a
+// panic would crash the node, since nothing up the stack of the CheckTxAsync
+// goroutine recovers it.
+func (app *unsyncLocalClient) checkTx(ctx context.Context, req *types.CheckTxRequest) (res *types.CheckTxResponse) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = checkTxFailed(fmt.Errorf("CheckTx panicked: %v", r))
+		}
+	}()
+
+	res, err := app.Application.CheckTx(ctx, req)
+	if err != nil {
+		return checkTxFailed(err)
+	}
+	return res
+}
+
+func checkTxFailed(err error) *types.CheckTxResponse {
+	return &types.CheckTxResponse{
+		Code:      CodeTypeCheckTxFailed,
+		Log:       err.Error(),
+		Codespace: CodespaceCheckTxFailed,
+	}
 }
 
 // -------------------------------------------------------

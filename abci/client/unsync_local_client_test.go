@@ -25,6 +25,7 @@ type gatedCheckTxApp struct {
 	gates   map[string]chan struct{}
 	started chan string
 	err     error
+	fail    func() // called before returning err
 }
 
 func newGatedCheckTxApp() *gatedCheckTxApp {
@@ -51,6 +52,9 @@ func (app *gatedCheckTxApp) CheckTx(_ context.Context, req *types.CheckTxRequest
 	app.started <- string(req.Tx)
 	<-app.gate(string(req.Tx))
 	if app.err != nil {
+		if app.fail != nil {
+			app.fail()
+		}
 		return nil, app.err
 	}
 	return &types.CheckTxResponse{Code: types.CodeTypeOK, Data: req.Tx}, nil
@@ -192,18 +196,30 @@ func TestUnsyncLocalClientFlushWaitsForCallbacks(t *testing.T) {
 }
 
 // TestUnsyncLocalClientCheckTxAsyncAppError checks that an application error
-// is reported as an exception response and that waiters are released.
+// or panic is reported as a rejected tx and that waiters are released. A panic
+// in the CheckTxAsync goroutine used to crash the process.
 func TestUnsyncLocalClientCheckTxAsyncAppError(t *testing.T) {
-	app := newGatedCheckTxApp()
-	app.err = errors.New("boom")
-	c := newStartedUnsyncClient(t, app)
+	for name, fail := range map[string]func(){
+		"error": func() {},
+		"panic": func() { panic("boom") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			app := newGatedCheckTxApp()
+			app.err = errors.New("boom")
+			app.fail = fail
+			c := newStartedUnsyncClient(t, app)
 
-	app.open("x")
-	rr, err := c.CheckTxAsync(context.Background(), &types.CheckTxRequest{Tx: []byte("x")})
-	require.NoError(t, err)
-	rr.Wait()
-	require.NotNil(t, rr.GetException())
-	assert.Equal(t, "boom", rr.GetException().Error)
+			app.open("x")
+			rr, err := c.CheckTxAsync(context.Background(), &types.CheckTxRequest{Tx: []byte("x")})
+			require.NoError(t, err)
+			rr.Wait()
+			res := rr.Response.GetCheckTx()
+			require.NotNil(t, res)
+			assert.Equal(t, abcicli.CodeTypeCheckTxFailed, res.Code)
+			assert.Equal(t, abcicli.CodespaceCheckTxFailed, res.Codespace)
+			assert.Contains(t, res.Log, "boom")
+		})
+	}
 }
 
 // TestUnsyncLocalClientCallbackErrorVisibleAfterWait checks that the callback

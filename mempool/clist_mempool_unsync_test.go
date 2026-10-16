@@ -61,3 +61,27 @@ func TestCListMempoolRecheckWithUnsyncClient(t *testing.T) {
 	require.True(t, mp.recheck.done())
 	require.Zero(t, mp.Size(), "txs rejected on recheck are still in the mempool")
 }
+
+// panickingApp panics in CheckTx.
+type panickingApp struct {
+	abci.BaseApplication
+}
+
+func (*panickingApp) CheckTx(context.Context, *abci.CheckTxRequest) (*abci.CheckTxResponse, error) {
+	panic("malicious tx")
+}
+
+// TestCListMempoolCheckTxPanicWithUnsyncClient checks that a CheckTx panic in
+// the application rejects the tx instead of crashing the node: with the
+// unsync client, CheckTx runs on a goroutine that nothing else recovers.
+func TestCListMempoolCheckTxPanicWithUnsyncClient(t *testing.T) {
+	conf := test.ResetTestRoot("mempool_unsync_panic_test")
+	mp, cleanup := newMempoolWithAppAndConfig(proxy.NewUnsyncLocalClientCreator(&panickingApp{}), conf)
+	t.Cleanup(cleanup)
+
+	rr, err := mp.CheckTx(types.Tx("tx"), "")
+	require.NoError(t, err)
+	rr.Wait()
+	require.ErrorAs(t, rr.Error(), &ErrInvalidTx{})
+	require.Zero(t, mp.Size())
+}
