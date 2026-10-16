@@ -473,7 +473,7 @@ func TestMempoolInterfaceReactor_SendsMempoolToNewPeer(t *testing.T) {
 // catches up, before the next tx, instead of being dropped.
 func TestMempoolInterfaceReactor_LaggingPeerKeepsTx(t *testing.T) {
 	stream := newMockTxBroadcastStream(log.TestingLogger())
-	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
 
 	peer := newRecordingPeer()
 	peer.setHeight(1)
@@ -481,6 +481,7 @@ func TestMempoolInterfaceReactor_LaggingPeerKeepsTx(t *testing.T) {
 
 	high := types.Tx("high=1")
 	low := types.Tx("low=1")
+	checkTxs(t, mp, "", high, low)
 	stream.sendTx(NewMempoolTxBuilder().WithHeight(10).WithTx(high).Build())
 	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(low).Build())
 
@@ -495,7 +496,7 @@ func TestMempoolInterfaceReactor_LaggingPeerKeepsTx(t *testing.T) {
 // when peer.Send fails, instead of being dropped.
 func TestMempoolInterfaceReactor_RetriesFailedSend(t *testing.T) {
 	stream := newMockTxBroadcastStream(log.TestingLogger())
-	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
 
 	peer := newRecordingPeer()
 	peer.setHeight(1)
@@ -503,6 +504,7 @@ func TestMempoolInterfaceReactor_RetriesFailedSend(t *testing.T) {
 	addPeer(t, reactor, peer)
 
 	tx := types.Tx("retry=1")
+	checkTxs(t, mp, "", tx)
 	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(tx).Build())
 	require.Equal(t, types.Txs{tx}, peer.waitSent(t, 1))
 
@@ -575,13 +577,14 @@ func (b *syncBuffer) String() string {
 }
 
 // TestMempoolInterfaceReactor_QueueOverflow checks that a peer whose queue
-// overflowed while it was lagging still gets every tx in the mempool, once,
-// instead of losing the txs that didn't fit in the queue.
+// overflowed while it was lagging still gets every tx in the mempool, instead
+// of losing the txs that didn't fit in the queue.
 func TestMempoolInterfaceReactor_QueueOverflow(t *testing.T) {
 	const queueSize = 3
 	stream := newMockTxBroadcastStream(log.TestingLogger())
 	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger(),
 		func(c *cfg.MempoolConfig) { c.Size = queueSize })
+	reactor.SetLatestHeightFunc(func() int64 { return 10 })
 
 	peer := newRecordingPeer()
 	peer.setHeight(1)
@@ -606,7 +609,19 @@ func TestMempoolInterfaceReactor_QueueOverflow(t *testing.T) {
 	require.Eventually(t, func() bool { return len(peer.sentTxs()) >= len(txs) }, 5*time.Second, 10*time.Millisecond,
 		"txs were lost")
 	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
-	require.ElementsMatch(t, txs, peer.sentTxs(), "each tx must be sent once")
+
+	// The tx the routine was blocked on is sent from the queue and again on
+	// resync; the others are sent once.
+	sent := peer.sentTxs()
+	require.LessOrEqual(t, len(sent), len(txs)+1)
+	unique := make(map[string]struct{})
+	for _, tx := range sent {
+		unique[string(tx)] = struct{}{}
+	}
+	require.Len(t, unique, len(txs))
+	for _, tx := range txs {
+		require.Contains(t, unique, string(tx))
+	}
 }
 
 // TestMempoolInterfaceReactor_ReconnectReplacesStaleQueue checks that a peer
@@ -615,7 +630,7 @@ func TestMempoolInterfaceReactor_QueueOverflow(t *testing.T) {
 // getting a broadcast routine.
 func TestMempoolInterfaceReactor_ReconnectReplacesStaleQueue(t *testing.T) {
 	stream := newMockTxBroadcastStream(log.TestingLogger())
-	reactor, _ := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
 
 	// The AddPeer routine of the old connection stored its queue after
 	// RemovePeer ran, and hasn't exited yet.
@@ -632,6 +647,78 @@ func TestMempoolInterfaceReactor_ReconnectReplacesStaleQueue(t *testing.T) {
 	reactor.RemovePeer(oldPeer, nil)
 
 	tx := types.Tx("reconnect=1")
+	checkTxs(t, mp, "", tx)
 	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(tx).Build())
 	require.Equal(t, types.Txs{tx}, newPeer.waitSent(t, 1))
+}
+
+// TestMempoolInterfaceReactor_MempoolTxsWaitForLaggingPeer checks that the
+// txs already in the mempool when a peer connects get the latest height, so
+// they aren't sent before the peer has caught up. They used to get height 0
+// and were sent to a peer that was still syncing.
+func TestMempoolInterfaceReactor_MempoolTxsWaitForLaggingPeer(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+	reactor.SetLatestHeightFunc(func() int64 { return 10 })
+
+	tx := types.Tx("existing=1")
+	checkTxs(t, mp, "", tx)
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Empty(t, peer.sentTxs(), "tx sent to a lagging peer")
+
+	peer.setHeight(9)
+	require.Equal(t, types.Txs{tx}, peer.waitSent(t, 1))
+}
+
+// TestMempoolInterfaceReactor_ReaddedTxIsSentAgain checks that a tx that left
+// the mempool and was added again is broadcast again. Txs used to be
+// deduplicated by key for the lifetime of the connection.
+func TestMempoolInterfaceReactor_ReaddedTxIsSentAgain(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	tx := types.Tx("readded=1")
+	checkTxs(t, mp, "", tx)
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+	require.Equal(t, types.Txs{tx}, peer.waitSent(t, 1))
+
+	require.NoError(t, mp.RemoveTxByKey(tx.Key()))
+	mp.forceRemoveFromCache(tx)
+	checkTxs(t, mp, "", tx)
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(tx).Build())
+	require.Equal(t, types.Txs{tx, tx}, peer.waitSent(t, 2))
+}
+
+// TestMempoolInterfaceReactor_SkipsTxRemovedWhileWaiting checks that a tx
+// removed from the mempool while the peer routine waits for the peer to catch
+// up is not sent, and doesn't hold back the next tx.
+func TestMempoolInterfaceReactor_SkipsTxRemovedWhileWaiting(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+
+	removed := types.Tx("removed=1")
+	kept := types.Tx("kept=1")
+	checkTxs(t, mp, "", removed, kept)
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(10).WithTx(removed).Build())
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(kept).Build())
+
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Empty(t, peer.sentTxs())
+
+	require.NoError(t, mp.RemoveTxByKey(removed.Key()))
+	require.Equal(t, types.Txs{kept}, peer.waitSent(t, 1))
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+	require.Equal(t, types.Txs{kept}, peer.sentTxs())
 }

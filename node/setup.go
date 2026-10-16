@@ -292,6 +292,7 @@ func createMempoolAndMempoolReactor(
 	logger log.Logger,
 	appInfoResponse *abci.InfoResponse,
 	meter metrics.Meter,
+	blockStore *store.BlockStore,
 ) (mempl.Mempool, waitSyncP2PReactor) {
 	switch config.Mempool.Type {
 	// allow empty string for backward compatibility
@@ -339,6 +340,7 @@ func createMempoolAndMempoolReactor(
 		if config.Consensus.WaitForTxs() {
 			mp.EnableTxsAvailable()
 		}
+		reactor.SetLatestHeightFunc(blockStore.Height)
 		reactor.SetLogger(logger)
 
 		return mp, reactor

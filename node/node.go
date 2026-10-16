@@ -466,6 +466,7 @@ func NewNodeWithCliParams(
 		logger,
 		appInfoResponse,
 		meter.SubMeter("mempool", metrics.Tag("svc", "mempool")),
+		blockStore,
 	)
 
 	evidenceReactor, evidencePool, err := createEvidenceReactor(config, dbProvider, stateStore, blockStore, logger)
