@@ -54,6 +54,11 @@ var (
 	config                *cfg.Config // NOTE: must be reset for each _test.go file
 	consensusReplayConfig *cfg.Config
 	ensureTimeout         = time.Millisecond * 200
+	// ensureVoteTimeout bounds the wait for a vote that must be cast. It is
+	// longer than ensureTimeout because signing and processing a large block
+	// can take longer than that on a loaded CI runner with -race, and a longer
+	// wait only delays a failure.
+	ensureVoteTimeout = 2 * time.Second
 )
 
 func ensureDir(dir string) {
@@ -752,7 +757,7 @@ func ensureVote(voteCh <-chan cmtpubsub.Message, height int64, round int32,
 	voteType types.SignedMsgType,
 ) {
 	select {
-	case <-time.After(ensureTimeout):
+	case <-time.After(ensureVoteTimeout):
 		panic("Timeout expired while waiting for NewVote event")
 	case msg := <-voteCh:
 		voteEvent, ok := msg.Data().(types.EventDataVote)
