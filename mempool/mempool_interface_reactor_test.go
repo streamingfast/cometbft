@@ -746,3 +746,64 @@ func TestMempoolInterfaceReactor_SkipsTxRemovedBeforeSend(t *testing.T) {
 	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
 	require.Equal(t, types.Txs{kept}, peer.sentTxs())
 }
+
+// TestMempoolInterfaceReactor_SkipsTxThePeerSentWhileWaiting checks that a tx
+// read from the mempool isn't sent to a peer that sent it to us after it was
+// read, while the routine waited for the peer to catch up.
+func TestMempoolInterfaceReactor_SkipsTxThePeerSentWhileWaiting(t *testing.T) {
+	stream := newMockTxBroadcastStream(log.TestingLogger())
+	reactor, mp := newTestMempoolInterfaceReactor(t, stream, false, log.TestingLogger())
+	reactor.SetLatestHeightFunc(func() int64 { return 10 })
+
+	tx := types.Tx("echo=1")
+	checkTxs(t, mp, "", tx)
+
+	peer := newRecordingPeer()
+	peer.setHeight(1)
+	addPeer(t, reactor, peer)
+	time.Sleep(3 * PeerCatchupSleepIntervalMS * time.Millisecond)
+
+	// The peer sends us the tx while it is still catching up.
+	_, err := mp.CheckTx(tx, peer.ID())
+	require.ErrorIs(t, err, ErrTxInCache)
+	peer.setHeight(9)
+
+	kept := types.Tx("kept=1")
+	checkTxs(t, mp, "", kept)
+	stream.sendTx(NewMempoolTxBuilder().WithHeight(1).WithTx(kept).Build())
+	require.Equal(t, types.Txs{kept}, peer.waitSent(t, 1))
+}
+
+// reapRecordingMempool records ReapMaxTxs calls in order.
+type reapRecordingMempool struct {
+	*CListMempool
+	order *[]string
+}
+
+func (m reapRecordingMempool) ReapMaxTxs(maxTxs int) types.Txs {
+	*m.order = append(*m.order, "ReapMaxTxs")
+	return m.CListMempool.ReapMaxTxs(maxTxs)
+}
+
+// TestMempoolInterfaceReactor_HeightReadAfterMempool checks that the height
+// given to the txs read from the mempool is read after them, so that it isn't
+// older than the txs when a block is committed in between.
+func TestMempoolInterfaceReactor_HeightReadAfterMempool(t *testing.T) {
+	config := cfg.TestConfig()
+	mp, cleanup := newMempoolInterfaceWithAppAndConfig(proxy.NewLocalClientCreator(kvstore.NewInMemoryApplication()))
+	t.Cleanup(cleanup)
+	checkTxs(t, mp, "", types.Tx("a=1"))
+
+	var order []string
+	reactor := NewMempoolInterfaceReactor(config.Mempool, reapRecordingMempool{CListMempool: mp, order: &order},
+		newMockTxBroadcastStream(log.TestingLogger()), false)
+	reactor.SetLatestHeightFunc(func() int64 {
+		order = append(order, "LatestHeight")
+		return 7
+	})
+
+	memTxs, _ := reactor.mempoolTxs()
+	require.Len(t, memTxs, 1)
+	require.EqualValues(t, 7, memTxs[0].Height())
+	require.Equal(t, []string{"ReapMaxTxs", "LatestHeight"}, order)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -335,42 +336,45 @@ func (memR *MempoolInterfaceReactor) LatestHeight() int64 {
 	return memR.latestHeight()
 }
 
-// mempoolTxs returns the txs currently in the mempool, with their senders,
-// and their keys.
+// mempoolTxs returns the txs currently in the mempool and their keys. Their
+// senders are looked up when they are sent, see isSender.
 func (memR *MempoolInterfaceReactor) mempoolTxs() ([]MempoolTx, map[types.TxKey]struct{}) {
-	height := memR.LatestHeight()
 	txs := memR.mempool.ReapMaxTxs(-1)
+	// Read the height after the txs: a block committed in between may have
+	// added or rechecked txs at the new height. A later height only holds
+	// back the txs for longer.
+	height := memR.LatestHeight()
 	memTxs := make([]MempoolTx, 0, len(txs))
 	keys := make(map[types.TxKey]struct{}, len(txs))
 	for _, tx := range txs {
-		key := tx.Key()
-		keys[key] = struct{}{}
-		b := NewMempoolTxBuilder().WithTx(tx).WithHeight(height)
-		senders, err := memR.mempool.GetSenders(key)
-		if err == nil {
-			for _, sender := range senders {
-				b.WithSender(sender)
-			}
-		}
-		memTxs = append(memTxs, b.Build())
+		keys[tx.Key()] = struct{}{}
+		memTxs = append(memTxs, NewMempoolTxBuilder().WithTx(tx).WithHeight(height).Build())
 	}
 	return memTxs, keys
 }
 
-// sendTx sends memTx to peer unless the peer sent it to us or it is no longer
-// in the mempool. It retries until the peer has caught up with the tx height
-// and has room for the message, and gives up if the tx leaves the mempool in
-// the meantime. It returns false if
-// the peer or the reactor stopped before the tx was sent.
-func (memR *MempoolInterfaceReactor) sendTx(peer p2p.Peer, memTx MempoolTx) bool {
-	if memTx.IsSender(peer.ID()) {
+// isSender reports whether peerID sent us memTx. The mempool is asked as
+// well, since the peer may have sent the tx after memTx was read from the
+// mempool.
+func (memR *MempoolInterfaceReactor) isSender(memTx MempoolTx, peerID p2p.ID) bool {
+	if memTx.IsSender(peerID) {
 		return true
 	}
+	senders, err := memR.mempool.GetSenders(memTx.Tx().Key())
+	return err == nil && slices.Contains(senders, peerID)
+}
 
+// sendTx sends memTx to peer unless it is no longer in the mempool or the
+// peer sent it to us. It retries until the peer has caught up with the tx
+// height and has room for the message, and gives up if either becomes true in
+// the meantime. It returns false if the peer or the reactor stopped before the
+// tx was sent.
+func (memR *MempoolInterfaceReactor) sendTx(peer p2p.Peer, memTx MempoolTx) bool {
 	for {
 		// The tx may have been committed or evicted while it was queued or
-		// while we waited for the peer.
-		if !memR.mempool.Contains(memTx.Tx().Key()) {
+		// while we waited for the peer, and the peer may have sent it to us
+		// in the meantime.
+		if !memR.mempool.Contains(memTx.Tx().Key()) || memR.isSender(memTx, peer.ID()) {
 			return true
 		}
 
