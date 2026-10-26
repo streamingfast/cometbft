@@ -1007,6 +1007,12 @@ func (n *Node) BlockStore() *store.BlockStore {
 	return n.blockStore
 }
 
+// StateStore returns the Node's state store without initializing RPC services.
+// The Node retains ownership of the store; callers must not close it.
+func (n *Node) StateStore() sm.Store {
+	return n.stateStore
+}
+
 // ConsensusReactor returns the Node's ConsensusReactor.
 func (n *Node) ConsensusReactor() *cs.Reactor {
 	return n.consensusReactor
