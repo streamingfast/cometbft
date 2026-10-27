@@ -56,7 +56,7 @@ jobs:
     steps:
       - name: Resolve pull request metadata
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
         with:
@@ -153,7 +153,7 @@ jobs:
           git diff --stat "${merge_base_sha}...${head_sha}"
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false
@@ -227,7 +227,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Report Codex feedback
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           BASE_REF: ${{ needs.codex.outputs.base_ref }}
           CODEX_FINAL_MESSAGE_B64: ${{ needs.codex.outputs.final_message_b64 }}
