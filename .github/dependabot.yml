@@ -4,88 +4,27 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    target-branch: "main"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
-
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-    target-branch: "v0.38.x"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
-
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-    target-branch: "v0.37.x"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
-
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-    target-branch: "v0.34.x"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
-
-  ###################################
-  ##
-  ## Update All Go Dependencies
-
-  - package-ecosystem: gomod
-    directory: "/"
-    schedule:
-      interval: weekly
-    target-branch: "main"
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - automerge
 
   - package-ecosystem: gomod
-    directory: "/"
+    directories:
+      - "/"
+      - "/api"
+      - "/scripts/mockery"
     schedule:
-      interval: daily
-    target-branch: "v0.38.x"
-    # Only allow automated security-related dependency updates on release
-    # branches.
-    open-pull-requests-limit: 0
+      interval: weekly
+    open-pull-requests-limit: 10
     labels:
       - dependencies
       - automerge
-
-  - package-ecosystem: gomod
-    directory: "/"
-    schedule:
-      interval: daily
-    target-branch: "v0.37.x"
-    # Only allow automated security-related dependency updates on release
-    # branches.
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
-      - automerge
-
-  - package-ecosystem: gomod
-    directory: "/"
-    schedule:
-      interval: daily
-    target-branch: "v0.34.x"
-    # Only allow automated security-related dependency updates on release
-    # branches.
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
-      - automerge
+    ignore:
+      # Local module, replaced with ./api.
+      - dependency-name: "github.com/cometbft/cometbft/api"
+      # Kept at the version injective-core pins with a replace directive.
+      - dependency-name: "github.com/syndtr/goleveldb"
+      # runc v1.4 removed libcontainer/user, which ory/dockertest/v3 imports.
+      - dependency-name: "github.com/opencontainers/runc"
+        versions: [">= 1.4.0"]
