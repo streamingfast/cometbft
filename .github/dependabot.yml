@@ -25,6 +25,9 @@ updates:
       - dependency-name: "github.com/cometbft/cometbft/api"
       # Kept at the version injective-core pins with a replace directive.
       - dependency-name: "github.com/syndtr/goleveldb"
+      # Must match the RocksDB C library in cometbft/cometbft-db-testing
+      # (the e2e base image), which is what cometbft-db requires.
+      - dependency-name: "github.com/linxGnu/grocksdb"
       # runc v1.4 removed libcontainer/user, which ory/dockertest/v3 imports.
       - dependency-name: "github.com/opencontainers/runc"
         versions: [">= 1.4.0"]
