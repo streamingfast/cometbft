@@ -343,6 +343,14 @@ func TestTransportMultiplexAcceptNonBlocking(t *testing.T) {
 	}
 
 	p, err := mt.Accept(peerConfig{})
+	// The slow peer's NodeInfo ID doesn't match its connection key, so its
+	// upgrade fails authentication. It starts once the fast peer's Dial returns,
+	// which can be before the listener finishes upgrading the fast connection,
+	// so that rejection may be accepted first.
+	var rejected ErrRejected
+	if errors.As(err, &rejected) && rejected.IsAuthFailure() {
+		p, err = mt.Accept(peerConfig{})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

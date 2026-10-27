@@ -422,8 +422,10 @@ func TestStateFullRound1(t *testing.T) {
 
 	ensureNewRound(newRoundCh, height, round)
 
-	ensureNewProposal(propCh, height, round)
-	propBlockHash := cs.GetRoundState().ProposalBlock.Hash()
+	// Take the hash from the event, not from cs.GetRoundState(): cs may already
+	// hold its lock while publishing the prevote to the unbuffered voteCh, which
+	// deadlocks until we read it.
+	propBlockHash := ensureNewProposal(propCh, height, round).Hash
 
 	ensurePrevote(voteCh, height, round) // wait for prevote
 	validatePrevote(t, cs, round, vss[0], propBlockHash)

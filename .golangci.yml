@@ -82,6 +82,7 @@ linters:
           allow:
             - $gostd
             - github.com/BurntSushi/toml
+            - github.com/ProtonMail/go-crypto/openpgp/armor
             - github.com/Masterminds/semver/v3
             - github.com/cometbft
             - github.com/cosmos
@@ -104,9 +105,12 @@ linters:
             - github.com/spf13
             - github.com/stretchr/testify/require
             - github.com/syndtr/goleveldb
-            - github.com/mitchellh/mapstructure
+            - github.com/go-viper/mapstructure/v2
             - github.com/decred/dcrd/dcrec/secp256k1/v4
             - golang.org/x/sync
+          deny:
+            - pkg: golang.org/x/crypto/openpgp
+              desc: unmaintained and unsafe by design (GO-2026-5932); use github.com/ProtonMail/go-crypto/openpgp
         test:
           files:
             - $test
