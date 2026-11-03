@@ -329,6 +329,9 @@ dial_timeout = "{{ .P2P.DialTimeout }}"
 #  - "nop"   : nop-mempool (short for no operation; the ABCI app is responsible
 #  for storing, disseminating and proposing txs). "create_empty_blocks=false" is
 #  not supported.
+#  - "proxy" : forwards all calls to a mempool provided by the application with
+#  node.WithCustomMempoolOnProxyMempool, and gossips the txs it streams.
+#  Requires "dog_protocol_enabled = false".
 type = "{{ .Mempool.Type }}"
 
 # recheck (default: true) defines whether CometBFT should recheck the

@@ -496,26 +496,14 @@ some way!)
 
 ### Formatting & Linting
 
-When submitting a change, please make sure to:
+Run `make lint` before submitting a change. It runs
+[golangci-lint](https://golangci-lint.run/) v2 with the repository's
+`.golangci.yml`, which also checks formatting (gofumpt, gci, goimports, gofmt)
+and spelling in Go code (misspell).
 
-1. Format the code using [gofumpt](https://github.com/mvdan/gofumpt)
-2. Lint the code using [golangci-lint](https://golangci-lint.run/)
-3. Check the code and docs for spelling errors using [codespell](https://github.com/codespell-project/codespell).
-
-It's recommended to install a Git pre-commit hook: `make pre-commit`. The hook will
-automatically run the above steps for you every time you commit something. You
-can also do this manually with `make lint`.
-
-The pre-commit hook uses [the pre-commit framework](https://pre-commit.com/).
-If you have Python 3 installed, you don't need to do anything else. Otherwise,
-please refer to [the installation guide](https://pre-commit.com/#install).
-
-In rare cases, you may want to skip the pre-commit hook. You can do so by adding
-`-n` (or `--no-verify`) flag to `git commit`:
-
-```bash
-git commit -n -m "add X"
-```
+Lint only reports issues introduced since the merge base with `v1.x-inj` (set
+`LINT_BASE` to compare against another branch); pre-existing findings in fork
+code are ignored. CI runs the same check on every pull request.
 
 #### Merging Pull Requests
 

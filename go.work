@@ -1,6 +1,11 @@
-go 1.26.2
+go 1.27.3
 
 use (
 	.
 	./api
 )
+
+// github.com/cockroachdb/errors requires the 2023 google.golang.org/genproto
+// monolith, which still contains googleapis/{api,rpc} and makes those imports
+// ambiguous in workspace mode. Newer monolith versions no longer contain them.
+replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20261026165753-2ffab32bce7e

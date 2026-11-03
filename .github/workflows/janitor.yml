@@ -4,13 +4,16 @@ name: Janitor
 on:
   pull_request:
 
+permissions:
+  actions: write
+
 jobs:
   cancel:
     name: "Cancel Previous Runs"
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: styfle/cancel-workflow-action@0.12.1
+      - uses: styfle/cancel-workflow-action@0.13.1
         with:
-          workflow_id: 1041851,1401230,2837803
+          workflow_id: tests.yml,e2e.yml,build.yml,lint.yml
           access_token: ${{ github.token }}

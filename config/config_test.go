@@ -165,6 +165,15 @@ func TestMempoolConfigValidateBasic(t *testing.T) {
 		setFieldTo(name, 1) // reset
 	}
 
+	// proxy mempool type is valid, but not with the DOG protocol.
+	reflect.ValueOf(cfg).Elem().FieldByName("Type").SetString(config.MempoolTypeProxy)
+	reflect.ValueOf(cfg).Elem().FieldByName("DOGProtocolEnabled").SetBool(false)
+	require.NoError(t, cfg.ValidateBasic())
+	reflect.ValueOf(cfg).Elem().FieldByName("DOGProtocolEnabled").SetBool(true)
+	require.Error(t, cfg.ValidateBasic())
+	reflect.ValueOf(cfg).Elem().FieldByName("DOGProtocolEnabled").SetBool(false)
+	reflect.ValueOf(cfg).Elem().FieldByName("Type").SetString(config.MempoolTypeNop)
+
 	// with DOG protocol only works with Flood and no MaxGossip feature.
 	reflect.ValueOf(cfg).Elem().FieldByName("DOGProtocolEnabled").SetBool(true)
 	require.Error(t, cfg.ValidateBasic())

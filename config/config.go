@@ -49,6 +49,7 @@ const (
 	v2 = "v2"
 
 	MempoolTypeFlood = "flood"
+	MempoolTypeProxy = "proxy"
 	MempoolTypeNop   = "nop"
 )
 
@@ -872,6 +873,9 @@ type MempoolConfig struct {
 	//  - "nop"   : nop-mempool (short for no operation; the ABCI app is
 	//  responsible for storing, disseminating and proposing txs).
 	//  "create_empty_blocks=false" is not supported.
+	//  - "proxy" : forwards all calls to a mempool provided by the application
+	//  with node.WithCustomMempoolOnProxyMempool, and gossips the txs it
+	//  streams. Requires DOGProtocolEnabled = false.
 	Type string `mapstructure:"type"`
 	// RootDir is the root directory for all data. This should be configured via
 	// the $CMTHOME env variable or --home cmd flag rather than overriding this
@@ -989,7 +993,7 @@ func (cfg *MempoolConfig) WalEnabled() bool {
 // returns an error if any check fails.
 func (cfg *MempoolConfig) ValidateBasic() error {
 	switch cfg.Type {
-	case MempoolTypeFlood, MempoolTypeNop:
+	case MempoolTypeFlood, MempoolTypeNop, MempoolTypeProxy:
 	case "": // allow empty string to be backwards compatible
 	default:
 		return fmt.Errorf("unknown mempool type: %q", cfg.Type)

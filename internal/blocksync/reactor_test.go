@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -580,4 +581,82 @@ func (bcR *ByzantineReactor) Receive(e p2p.Envelope) {
 	default:
 		bcR.Logger.Error(fmt.Sprintf("Unknown message type %v", reflect.TypeOf(msg)))
 	}
+}
+
+// callOrder records the order in which the fake reactors are called.
+type callOrder struct {
+	mtx   sync.Mutex
+	calls []string
+}
+
+func (o *callOrder) add(call string) {
+	o.mtx.Lock()
+	defer o.mtx.Unlock()
+	o.calls = append(o.calls, call)
+}
+
+func (o *callOrder) get() []string {
+	o.mtx.Lock()
+	defer o.mtx.Unlock()
+	return append([]string(nil), o.calls...)
+}
+
+type fakeMempoolReactor struct {
+	p2p.BaseReactor
+	order *callOrder
+}
+
+func (r *fakeMempoolReactor) EnableInOutTxs() { r.order.add("EnableInOutTxs") }
+
+type fakeConsensusReactor struct {
+	p2p.BaseReactor
+	order *callOrder
+}
+
+func (r *fakeConsensusReactor) SwitchToConsensus(sm.State, bool) { r.order.add("SwitchToConsensus") }
+
+// TestSwitchToConsensusBeforeEnablingMempool checks that block sync hands the
+// synced state to consensus before it enables the mempool, so that the
+// mempool reactor sees the synced height when it starts sending txs.
+func TestSwitchToConsensusBeforeEnablingMempool(t *testing.T) {
+	const maxBlockHeight = int64(10)
+
+	config = test.ResetTestRoot("blocksync_reactor_test")
+	defer os.RemoveAll(config.RootDir)
+	genDoc, privVals := randGenesisDoc()
+
+	reactorPairs := []ReactorPair{
+		newReactor(t, log.TestingLogger(), genDoc, privVals, 0),
+		newReactor(t, log.TestingLogger(), genDoc, privVals, maxBlockHeight),
+	}
+	reactorPairs[0].reactor.switchToConsensusMs = 50
+	defer func() {
+		for _, r := range reactorPairs {
+			require.NoError(t, r.reactor.Stop())
+			require.NoError(t, r.app.Stop())
+		}
+	}()
+
+	order := &callOrder{}
+	memR := &fakeMempoolReactor{order: order}
+	memR.BaseReactor = *p2p.NewBaseReactor("fakeMempool", memR)
+	conR := &fakeConsensusReactor{order: order}
+	conR.BaseReactor = *p2p.NewBaseReactor("fakeConsensus", conR)
+
+	switches := make([]*p2p.Switch, 0, len(reactorPairs))
+	for i, r := range reactorPairs {
+		switches = append(switches, p2p.MakeConnectedSwitches(config.P2P, 1, func(_ int, s *p2p.Switch) *p2p.Switch {
+			s.AddReactor("BLOCKSYNC", r.reactor)
+			if i == 0 {
+				s.AddReactor("MEMPOOL", memR)
+				s.AddReactor("CONSENSUS", conR)
+			}
+			return s
+		}, p2p.Connect2Switches)...)
+	}
+	p2p.Connect2Switches(switches, 0, 1)
+
+	require.Eventually(t, func() bool { return len(order.get()) == 2 }, 30*time.Second, 20*time.Millisecond,
+		"block sync didn't switch to consensus")
+	require.Equal(t, []string{"SwitchToConsensus", "EnableInOutTxs"}, order.get())
 }

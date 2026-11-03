@@ -54,6 +54,11 @@ var (
 	config                *cfg.Config // NOTE: must be reset for each _test.go file
 	consensusReplayConfig *cfg.Config
 	ensureTimeout         = time.Millisecond * 200
+	// ensureVoteTimeout bounds the wait for a vote that must be cast. It is
+	// longer than ensureTimeout because signing and processing a large block
+	// can take longer than that on a loaded CI runner with -race, and a longer
+	// wait only delays a failure.
+	ensureVoteTimeout = 2 * time.Second
 )
 
 func ensureDir(dir string) {
@@ -707,7 +712,7 @@ func ensureRelock(relockCh <-chan cmtpubsub.Message, height int64, round int32) 
 		"Timeout expired while waiting for RelockValue event")
 }
 
-func ensureProposalWithTimeout(proposalCh <-chan cmtpubsub.Message, height int64, round int32, propID *types.BlockID, timeout time.Duration) {
+func ensureProposalWithTimeout(proposalCh <-chan cmtpubsub.Message, height int64, round int32, propID *types.BlockID, timeout time.Duration) types.BlockID {
 	select {
 	case <-time.After(timeout):
 		panic("Timeout expired while waiting for NewProposal event")
@@ -728,6 +733,7 @@ func ensureProposalWithTimeout(proposalCh <-chan cmtpubsub.Message, height int64
 				panic(fmt.Sprintf("Proposed block does not match expected block (%v != %v)", proposalEvent.BlockID, *propID))
 			}
 		}
+		return proposalEvent.BlockID
 	}
 }
 
@@ -736,8 +742,8 @@ func ensureProposal(proposalCh <-chan cmtpubsub.Message, height int64, round int
 }
 
 // For the propose, as we do not know the blockID in advance.
-func ensureNewProposal(proposalCh <-chan cmtpubsub.Message, height int64, round int32) {
-	ensureProposalWithTimeout(proposalCh, height, round, nil, ensureTimeout)
+func ensureNewProposal(proposalCh <-chan cmtpubsub.Message, height int64, round int32) types.BlockID {
+	return ensureProposalWithTimeout(proposalCh, height, round, nil, ensureTimeout)
 }
 
 func ensurePrecommit(voteCh <-chan cmtpubsub.Message, height int64, round int32) {
@@ -752,7 +758,7 @@ func ensureVote(voteCh <-chan cmtpubsub.Message, height int64, round int32,
 	voteType types.SignedMsgType,
 ) {
 	select {
-	case <-time.After(ensureTimeout):
+	case <-time.After(ensureVoteTimeout):
 		panic("Timeout expired while waiting for NewVote event")
 	case msg := <-voteCh:
 		voteEvent, ok := msg.Data().(types.EventDataVote)

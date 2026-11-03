@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/InjectiveLabs/metrics/v2"
@@ -144,6 +145,21 @@ func CustomReactors(reactors map[string]p2p.Reactor) Option {
 func StateProvider(stateProvider statesync.StateProvider) Option {
 	return func(n *Node) {
 		n.stateSyncProvider = stateProvider
+	}
+}
+
+// WithCustomMempoolOnProxyMempool sets the mempool and the tx broadcast stream
+// that a node with the "proxy" mempool type forwards to. It panics if the
+// node's mempool is not a proxy mempool.
+func WithCustomMempoolOnProxyMempool(customMempool mempl.Mempool, txBroadcastStream mempl.TxBroadcastStream) Option {
+	return func(n *Node) {
+		proxyMempool, ok := n.mempool.(*mempl.ProxyMempool)
+		if !ok {
+			panic("mempool is not a proxy mempool")
+		}
+
+		proxyMempool.SetMempool(customMempool)
+		proxyMempool.SetTxBroadcastStream(txBroadcastStream)
 	}
 }
 
@@ -501,6 +517,13 @@ func NewNodeWithCliParams(
 		meter.SubMeter("consensus", metrics.Tag("svc", "consensus")),
 	)
 
+	if r, ok := mempoolReactor.(*mempl.MempoolInterfaceReactor); ok {
+		// Not the block store height: it stays 0 after state sync until a
+		// block is saved. State sync and block sync update the consensus
+		// state when they hand over to consensus.
+		r.SetLatestHeightFunc(consensusState.GetLastHeight)
+	}
+
 	err = stateStore.SetOfflineStateSyncHeight(0)
 	if err != nil {
 		panic(fmt.Sprintf("failed to reset the offline state sync height %s", err))
@@ -601,6 +624,15 @@ func NewNodeWithCliParams(
 
 	for _, option := range options {
 		option(node)
+	}
+
+	if proxyMempool, ok := mempool.(*mempl.ProxyMempool); ok {
+		if proxyMempool.Mempool == nil {
+			return nil, errors.New("proxy mempool has no custom mempool set; use the WithCustomMempoolOnProxyMempool option")
+		}
+		if config.Mempool.Broadcast && proxyMempool.TxBroadcastStream == nil {
+			return nil, errors.New("proxy mempool has no tx broadcast stream set; use the WithCustomMempoolOnProxyMempool option")
+		}
 	}
 
 	return node, nil
@@ -975,6 +1007,12 @@ func (n *Node) BlockStore() *store.BlockStore {
 	return n.blockStore
 }
 
+// StateStore returns the Node's state store without initializing RPC services.
+// The Node retains ownership of the store; callers must not close it.
+func (n *Node) StateStore() sm.Store {
+	return n.stateStore
+}
+
 // ConsensusReactor returns the Node's ConsensusReactor.
 func (n *Node) ConsensusReactor() *cs.Reactor {
 	return n.consensusReactor
@@ -1076,6 +1114,16 @@ func makeNodeInfo(
 			TxIndex:    txIndexerStatus,
 			RPCAddress: config.RPC.ListenAddress,
 		},
+	}
+
+	if config.Mempool.Type == cfg.MempoolTypeProxy {
+		// The proxy mempool reactor doesn't speak the DOG protocol, so it
+		// doesn't register the mempool control channel. Advertising it would
+		// let DOG peers send HaveTx and ResetRoute messages, and the
+		// connection drops peers that send on an unknown channel.
+		nodeInfo.Channels = slices.DeleteFunc(nodeInfo.Channels, func(ch byte) bool {
+			return ch == mempl.MempoolControlChannel
+		})
 	}
 
 	if config.P2P.PexReactor {

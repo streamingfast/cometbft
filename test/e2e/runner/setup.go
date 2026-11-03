@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 
 	_ "embed"
@@ -107,17 +107,17 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 			return err
 		}
 
-		(privval.NewFilePV(node.PrivvalKey,
+		privval.NewFilePV(node.PrivvalKey,
 			filepath.Join(nodeDir, PrivvalKeyFile),
 			filepath.Join(nodeDir, PrivvalStateFile),
-		)).Save()
+		).Save()
 
 		// Set up a dummy validator. CometBFT requires a file PV even when not used, so we
 		// give it a dummy such that it will fail if it actually tries to use it.
-		(privval.NewFilePV(ed25519.GenPrivKey(),
+		privval.NewFilePV(ed25519.GenPrivKey(),
 			filepath.Join(nodeDir, PrivvalDummyKeyFile),
 			filepath.Join(nodeDir, PrivvalDummyStateFile),
-		)).Save()
+		).Save()
 
 		if testnet.LatencyEmulationEnabled {
 			// Generate a shell script file containing tc (traffic control) commands

@@ -2,6 +2,7 @@ package abcicli
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/cometbft/cometbft/abci/types"
@@ -15,9 +16,24 @@ type unsyncLocalClient struct {
 
 	mtx sync.Mutex
 	Callback
+
+	// lastDelivered is closed once the callbacks of the most recent
+	// CheckTxAsync request have been delivered. Each request waits for the
+	// previous one's channel before delivering its own callbacks, so callbacks
+	// run one at a time and in request order while the application checks run
+	// in parallel. Guarded by mtx.
+	lastDelivered chan struct{}
 }
 
 var _ Client = (*unsyncLocalClient)(nil)
+
+// CodeTypeCheckTxFailed and CodespaceCheckTxFailed identify the CheckTx
+// response of the unsync local client's CheckTxAsync when the application
+// returned an error or panicked.
+const (
+	CodeTypeCheckTxFailed  uint32 = 1
+	CodespaceCheckTxFailed        = "abci-client"
+)
 
 // NewUnsyncLocalClient creates a local client, which wraps the application
 // interface that Comet as the client will call to the application as the
@@ -43,24 +59,68 @@ func (app *unsyncLocalClient) SetResponseCallback(cb Callback) {
 	app.mtx.Unlock()
 }
 
+// CheckTxAsync runs CheckTx on the application in a new goroutine and returns
+// immediately. Application calls of consecutive requests run in parallel, but
+// their callbacks are delivered serially and in request order, as with the
+// other ABCI clients. Flush waits until all callbacks have been delivered.
 func (app *unsyncLocalClient) CheckTxAsync(ctx context.Context, req *types.CheckTxRequest) (*ReqRes, error) {
-	res, err := app.Application.CheckTx(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return app.callback(
-		types.ToCheckTxRequest(req),
-		types.ToCheckTxResponse(res),
-	), nil
+	reqres := NewReqRes(types.ToCheckTxRequest(req))
+
+	delivered := make(chan struct{})
+	app.mtx.Lock()
+	prevDelivered := app.lastDelivered
+	app.lastDelivered = delivered
+	app.mtx.Unlock()
+
+	go func() {
+		defer close(delivered)
+
+		reqres.Response = types.ToCheckTxResponse(app.checkTx(ctx, req))
+
+		if prevDelivered != nil {
+			<-prevDelivered
+		}
+
+		app.mtx.Lock()
+		cb := app.Callback
+		app.mtx.Unlock()
+		if cb != nil {
+			cb(reqres.Request, reqres.Response)
+		}
+
+		// Invoke the callback before releasing waiters, so that they see its
+		// result in reqres.Error().
+		reqres.InvokeCallback()
+		reqres.Done()
+	}()
+
+	return reqres, nil
 }
 
-func (app *unsyncLocalClient) callback(req *types.Request, res *types.Response) *ReqRes {
-	if app.Callback != nil {
-		app.Callback(req, res)
+// checkTx calls CheckTx on the application. An error or a panic is reported
+// as a rejected tx: the mempool callbacks expect a CheckTx response, and a
+// panic would crash the node, since nothing up the stack of the CheckTxAsync
+// goroutine recovers it.
+func (app *unsyncLocalClient) checkTx(ctx context.Context, req *types.CheckTxRequest) (res *types.CheckTxResponse) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = checkTxFailed(fmt.Errorf("CheckTx panicked: %v", r))
+		}
+	}()
+
+	res, err := app.Application.CheckTx(ctx, req)
+	if err != nil {
+		return checkTxFailed(err)
 	}
-	rr := newLocalReqRes(req, res)
-	rr.callbackInvoked = true
-	return rr
+	return res
+}
+
+func checkTxFailed(err error) *types.CheckTxResponse {
+	return &types.CheckTxResponse{
+		Code:      CodeTypeCheckTxFailed,
+		Log:       err.Error(),
+		Codespace: CodespaceCheckTxFailed,
+	}
 }
 
 // -------------------------------------------------------
@@ -69,8 +129,22 @@ func (*unsyncLocalClient) Error() error {
 	return nil
 }
 
-func (*unsyncLocalClient) Flush(context.Context) error {
-	return nil
+// Flush blocks until the callbacks of all CheckTxAsync requests issued so far
+// have been delivered.
+func (app *unsyncLocalClient) Flush(ctx context.Context) error {
+	app.mtx.Lock()
+	lastDelivered := app.lastDelivered
+	app.mtx.Unlock()
+
+	if lastDelivered == nil {
+		return nil
+	}
+	select {
+	case <-lastDelivered:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (*unsyncLocalClient) Echo(_ context.Context, msg string) (*types.EchoResponse, error) {

@@ -181,3 +181,24 @@ type Iterator interface {
 	// WaitNextCh returns a channel on which to wait for the next available entry.
 	WaitNextCh() <-chan Entry
 }
+
+// MempoolTx defines the interface for a transaction in the mempool.
+// It provides methods to access transaction properties and sender information.
+//
+//nolint:revive // exported name is part of the API that injective-core implements
+type MempoolTx interface {
+	Height() int64
+	GasWanted() int64
+	Tx() types.Tx
+	IsSender(peerID p2p.ID) bool
+	// AddSender adds peerID to the list of tx senders list. Returns true if sender was already present in the list.
+	AddSender(peerID p2p.ID) bool
+	Senders() []p2p.ID
+}
+
+// TxBroadcastStream defines the interface for streaming transactions to broadcast.
+// It provides a channel that will receive transactions to be broadcasted to peers.
+type TxBroadcastStream interface {
+	// GetTxChannel returns a channel that will receive transactions to broadcast.
+	GetTxChannel() <-chan MempoolTx
+}

@@ -189,7 +189,7 @@ func fetchBlockChain(t *testing.T) []*types.Block {
 	}
 
 	for h := from; h <= to; h++ {
-		resp, err := client.Block(ctx, &(h))
+		resp, err := client.Block(ctx, &h)
 		require.NoError(t, err)
 		require.NotNil(t, resp.Block)
 		require.Equal(t, h, resp.Block.Height, "unexpected block height %v", resp.Block.Height)

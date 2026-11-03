@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -45,6 +46,19 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 	appFunc := newKVStore
 
 	genDoc, privVals := randGenesisDoc(nValidators, 30, nil, cmttime.Now())
+
+	// Give the byzantine validator enough power that the honest validators
+	// cannot reach +2/3 without it. Otherwise they can commit the height
+	// before the conflicting prevotes arrive, or push the byzantine node
+	// straight to precommit so it never prevotes, and no evidence is produced.
+	byzPubKey, err := privVals[byzantineNode].GetPubKey()
+	require.NoError(t, err)
+	for i := range genDoc.Validators {
+		if bytes.Equal(genDoc.Validators[i].PubKey.Address(), byzPubKey.Address()) {
+			genDoc.Validators[i].Power *= 2
+		}
+	}
+
 	css := make([]*State, nValidators)
 
 	for i := 0; i < nValidators; i++ {
@@ -258,15 +272,26 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 	// extra headroom for slower cold runs.
 	evidenceCommitTimeout := 2 * time.Minute
 
+	subErrCh := make(chan error, nValidators)
+
 	wg := new(sync.WaitGroup)
 	for i := 0; i < nValidators; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for msg := range blocksSubs[i].Out() {
-				block := msg.Data().(types.EventDataNewBlock).Block
-				if len(block.Evidence.Evidence) != 0 {
-					evidenceFromEachValidator[i] = block.Evidence.Evidence[0]
+			sub := blocksSubs[i]
+			for {
+				select {
+				case msg := <-sub.Out():
+					block := msg.Data().(types.EventDataNewBlock).Block
+					if len(block.Evidence.Evidence) != 0 {
+						evidenceFromEachValidator[i] = block.Evidence.Evidence[0]
+						return
+					}
+				case <-sub.Canceled():
+					if err := sub.Err(); err != nil {
+						subErrCh <- err
+					}
 					return
 				}
 			}
@@ -284,6 +309,11 @@ func TestByzantinePrevoteEquivocation(t *testing.T) {
 
 	select {
 	case <-done:
+		select {
+		case err := <-subErrCh:
+			t.Fatalf("subscription unexpectedly canceled: %v", err)
+		default:
+		}
 		for idx, ev := range evidenceFromEachValidator {
 			if assert.NotNil(t, ev, idx) {
 				ev, ok := ev.(*types.DuplicateVoteEvidence)
@@ -571,6 +601,7 @@ func NewByzantineReactor(conR *Reactor) *ByzantineReactor {
 
 func (br *ByzantineReactor) SetSwitch(s *p2p.Switch)               { br.reactor.SetSwitch(s) }
 func (br *ByzantineReactor) GetChannels() []*p2p.ChannelDescriptor { return br.reactor.GetChannels() }
+
 func (br *ByzantineReactor) AddPeer(peer p2p.Peer) {
 	if !br.reactor.IsRunning() {
 		return
