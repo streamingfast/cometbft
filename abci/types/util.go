@@ -11,7 +11,7 @@ import (
 // ValidatorUpdates is a list of validators that implements the Sort interface.
 type ValidatorUpdates []ValidatorUpdate
 
-var _ sort.Interface = (ValidatorUpdates)(nil)
+var _ sort.Interface = ValidatorUpdates(nil)
 
 // All these methods for ValidatorUpdates:
 //    Len, Less and Swap

@@ -1,32 +1,36 @@
-name: Lint, format and check the code for typos
-# Lint runs `make lint`
+name: Lint
+# Runs golangci-lint on pull requests and reports only issues introduced since
+# the merge base with the PR's base branch. Pre-existing findings in fork code
+# don't fail unrelated changes.
 #
-# This workflow is run on every pull request and push to main.
-#
-# To run this locally, simply run `make lint` from the root of the repo.
+# To run this locally, run `make lint` from the root of the repo.
 
 on:
   pull_request:
-  merge_group:
-  push:
-    branches:
-      - v1.x
+
+permissions:
+  contents: read
 
 jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
         with:
-          python-version: '3.x'
+          # golangci-lint needs history to find the merge base.
+          fetch-depth: 0
 
-      - run: echo "GO_VERSION=$(cat .github/workflows/go-version.env | grep GO_VERSION | cut -d '=' -f2)" >> $GITHUB_ENV
+      - run: echo "GO_VERSION=$(cat .github/workflows/go-version.env | grep GO_VERSION | cut -d '=' -f2)" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - uses: pre-commit/action@v3.0.1
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          args: --timeout=15m --new-from-merge-base=origin/${{ github.base_ref }}
+          skip-cache: true

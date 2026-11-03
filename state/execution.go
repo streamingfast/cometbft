@@ -743,7 +743,7 @@ func fireEvents(
 			Height: block.Height,
 			Index:  uint32(i),
 			Tx:     tx,
-			Result: *(abciResponse.TxResults[i]),
+			Result: *abciResponse.TxResults[i],
 		}}); err != nil {
 			logger.Error("Failed publishing event TX", "err", err)
 		}

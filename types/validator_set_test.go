@@ -251,7 +251,7 @@ func TestProposerSelection2(t *testing.T) {
 	valList := []*Validator{val0, val1, val2}
 	vals := NewValidatorSet(valList)
 	for i := 0; i < len(valList)*5; i++ {
-		ii := (i) % len(valList)
+		ii := i % len(valList)
 		prop := vals.GetProposer()
 		if !bytes.Equal(prop.Address, valList[ii].Address) {
 			t.Fatalf("(%d): Expected %X. Got %X", i, valList[ii].Address, prop.Address)

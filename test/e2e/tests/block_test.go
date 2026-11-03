@@ -117,7 +117,7 @@ func TestBlock_Range(t *testing.T) {
 			if h < first {
 				continue
 			}
-			resp, err := client.Block(ctx, &(h))
+			resp, err := client.Block(ctx, &h)
 			if node.RetainBlocks > 0 && !node.EnableCompanionPruning &&
 				(err != nil && strings.Contains(err.Error(), " is not available, lowest height is ") ||
 					resp.Block == nil) {
@@ -137,7 +137,7 @@ func TestBlock_Range(t *testing.T) {
 		}
 
 		for h := node.Testnet.InitialHeight; h < first; h++ {
-			_, err := client.Block(ctx, &(h))
+			_, err := client.Block(ctx, &h)
 			require.Error(t, err)
 		}
 	})
